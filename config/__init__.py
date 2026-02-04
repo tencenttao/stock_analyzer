@@ -1,0 +1,77 @@
+# -*- coding: utf-8 -*-
+
+"""
+配置层 - 统一管理所有配置
+
+使用示例:
+    from config import BACKTEST_CONFIG, DEFAULT_STRATEGY, TUSHARE_TOKEN
+    from config import EMAIL_CONFIG, SCHEDULE_CONFIG  # 实盘通知
+"""
+
+from config.settings import (
+    # 路径
+    PROJECT_ROOT,
+    CACHE_DIR,
+    LOG_DIR,
+    REPORT_DIR,
+    # 日志
+    LOG_LEVEL,
+    LOG_FORMAT,
+    LOG_CONFIG,
+    # 缓存
+    CACHE_EXPIRE_DAYS,
+    USE_MEMORY_CACHE,
+    USE_FILE_CACHE,
+    # 并发
+    MAX_WORKERS,
+    REQUEST_DELAY,
+    # 显示
+    VERBOSE,
+    PROGRESS_BAR,
+    # 邮件和调度
+    EMAIL_CONFIG,
+    SCHEDULE_CONFIG,
+    DATA_CONFIG,
+    # 回测配置
+    BACKTEST_FILTER_CONFIG,
+    BACKTEST_SAMPLE_CONFIG,
+    BACKTEST_OUTPUT_CONFIG,
+    BACKTEST_CONFIG,
+    BACKTEST_DEFAULTS,
+    # 选股配置
+    SELECTION_CONFIG,
+    SELECTION_DEFAULTS,
+    STOCK_FILTER_CONFIG,
+)
+from config.strategy_config import (
+    STRATEGY_CONFIGS,
+    DEFAULT_STRATEGY,
+    STRATEGY_CATEGORIES,
+    STRATEGY_RECOMMENDATIONS,
+)
+from config.data_source_config import (
+    DEFAULT_DATA_SOURCE,
+    TUSHARE_TOKEN,
+    DATA_SOURCE_CONFIGS,
+    DATA_SOURCE_PRIORITY,
+    FEATURE_SOURCE_MAP,
+)
+
+__all__ = [
+    # 路径
+    'PROJECT_ROOT', 'CACHE_DIR', 'LOG_DIR', 'REPORT_DIR',
+    # 日志
+    'LOG_LEVEL', 'LOG_FORMAT', 'LOG_CONFIG',
+    # 缓存
+    'CACHE_EXPIRE_DAYS', 'USE_MEMORY_CACHE', 'USE_FILE_CACHE',
+    # 邮件和调度
+    'EMAIL_CONFIG', 'SCHEDULE_CONFIG', 'DATA_CONFIG',
+    # 策略配置
+    'STRATEGY_CONFIGS', 'DEFAULT_STRATEGY', 'STRATEGY_CATEGORIES', 'STRATEGY_RECOMMENDATIONS',
+    # 数据源配置
+    'DEFAULT_DATA_SOURCE', 'TUSHARE_TOKEN', 'DATA_SOURCE_CONFIGS',
+    # 回测配置
+    'BACKTEST_FILTER_CONFIG', 'BACKTEST_SAMPLE_CONFIG', 'BACKTEST_CONFIG', 'BACKTEST_OUTPUT_CONFIG',
+    # 选股配置
+    'SELECTION_CONFIG', 'STOCK_FILTER_CONFIG',
+]

@@ -1,0 +1,48 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+.venv/
+venv/
+
+# ===== Jupyter =====
+.ipynb_checkpoints/
+
+# ===== Data（只忽略生成数据，保留 data/ 下 Python 源码） =====
+data/quarterly_data/
+datasets/
+*.csv
+*.tsv
+*.parquet
+*.json
+*.pkl
+*.h5
+*.npy
+*.npz
+
+# ===== Models（只忽略模型文件，保留 models/ 下其他文件） =====
+models/*.pkl
+models/*.joblib
+*.pt
+*.pth
+*.onnx
+*.ckpt
+
+# ===== Cache & Logs =====
+cache/
+logs/
+output/
+outputs/
+nohup*.txt
+
+# ===== Environment =====
+.env
+.env.*
+!.env.example
+*.env
+
+# ===== OS =====
+.DS_Store
+
