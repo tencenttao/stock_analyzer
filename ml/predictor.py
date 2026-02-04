@@ -26,6 +26,7 @@ class PredictionResult:
     prob_neutral: float
     confidence: float
     prediction: str  # 'up', 'down', 'neutral'
+    predicted_return: Optional[float] = None  # 回归模型预测的相对收益(%)，用于阈值过滤
 
 
 class StockPredictor:
@@ -141,41 +142,61 @@ class StockPredictor:
             features_list: 特征字典列表，每个字典包含 code, name 和特征值
             
         Returns:
-            预测结果列表
+            预测结果列表。回归模型时含 predicted_return（相对收益%），供阈值过滤使用。
         """
-        results = []
+        if not features_list:
+            return []
         
+        # 批量构建特征矩阵
+        X_list = []
         for features in features_list:
-            # 提取特征数组
-            feature_array = np.array([[
+            arr = np.array([
                 float(features.get(name, 0) or 0)
                 for name in self.feature_names
-            ]], dtype=np.float32)
-            feature_array = np.nan_to_num(feature_array, nan=0.0, posinf=0.0, neginf=0.0)
-            
-            # 预测
-            proba = self.model.predict_proba(feature_array)[0]
-            
-            # 解析概率（假设类别顺序为 0, 1, 2）
-            prob_down = proba[0] if len(proba) > 0 else 0
-            prob_neutral = proba[1] if len(proba) > 1 else 0
-            prob_up = proba[2] if len(proba) > 2 else 0
-            
-            max_idx = np.argmax(proba)
+            ], dtype=np.float32)
+            X_list.append(arr)
+        X = np.nan_to_num(np.array(X_list), nan=0.0, posinf=0.0, neginf=0.0)
+        
+        # 回归模型：取原始预测值（相对收益%）
+        raw_pred = None
+        if hasattr(self.model, 'predict') and callable(getattr(self.model, 'predict', None)):
+            try:
+                out = self.model.predict(X)
+                if getattr(out, 'ndim', 0) == 1 and len(out) == len(features_list):
+                    raw_pred = np.asarray(out).ravel()
+            except Exception:
+                pass
+        
+        # 概率/伪概率
+        proba = self.model.predict_proba(X)
+        
+        results = []
+        for i, features in enumerate(features_list):
+            p = proba[i] if proba.ndim > 1 else proba
+            prob_down = float(p[0] if len(p) > 0 else 0)
+            prob_neutral = float(p[1] if len(p) > 1 else 0)
+            prob_up = float(p[2] if len(p) > 2 else 0)
+            max_idx = np.argmax(p)
+            pred_ret = float(raw_pred[i]) if raw_pred is not None and i < len(raw_pred) else None
             
             result = PredictionResult(
                 code=features.get('code', ''),
                 name=features.get('name', ''),
-                prob_up=float(prob_up),
-                prob_down=float(prob_down),
-                prob_neutral=float(prob_neutral),
-                confidence=float(proba[max_idx]),
+                prob_up=prob_up,
+                prob_down=prob_down,
+                prob_neutral=prob_neutral,
+                confidence=float(p[max_idx]),
                 prediction=self.CLASS_LABELS.get(max_idx, 'neutral'),
+                predicted_return=pred_ret,
             )
             results.append(result)
         
-        # 按上涨概率排序
-        results.sort(key=lambda x: x.prob_up, reverse=True)
+        # 排序：有 predicted_return 时按预测收益排，否则按 prob_up
+        def sort_key(r):
+            if r.predicted_return is not None:
+                return r.predicted_return
+            return r.prob_up
+        results.sort(key=sort_key, reverse=True)
         return results
     
     def filter_high_confidence(

@@ -10,7 +10,10 @@
 1) 大盘环境特征（compute_market_features）
    - 数据：沪深300(000300) 日线，date 前约 180 天 ~ date（含 date）
    - 排序：按 trade_date 升序，closes[-1] = 当日收盘
-   - market_momentum_20d/60d: (当日收盘 - N日前收盘) / N日前收盘 * 100（%）
+   - market_momentum_20d: (closes[-1] - closes[-20]) / closes[-20] * 100（%）
+     注意：使用 closes[-period] 而非 closes[-period-1]，与 tushare_source 个股动量口径一致
+     即 momentum_20d 实际是 "当前 vs 19个交易日前"（间隔 19 天）
+   - market_momentum_60d: 同上，使用 closes[-60]
    - market_volatility_20d: 最近 21 根 K 的日收益率标准差，年化 sqrt(252) 后 * 100（%）
    - market_trend: 1=上涨(current>MA20>MA60), -1=下跌(current<MA20<MA60), 0=震荡
 
@@ -170,15 +173,20 @@ def compute_stock_market_relation(
 
 def _calc_momentum(closes: List[float], period: int) -> float:
     """
-    计算动量 (%)，与 quarterly_data / build_training_data 口径一致。
-    使用最近 period 个交易日的收益率：(当前收盘 - period日前收盘) / period日前收盘 * 100。
+    计算动量 (%)，与 tushare_source / quarterly_data 口径一致。
+    
+    口径说明：
+    - 个股 momentum_20d: prices[0] / prices[19] (降序数组，间隔 19 个交易日)
+    - 本函数: closes[-1] / closes[-period] (升序数组，间隔 period-1 个交易日)
+    - 两者等价：都是"当前 vs period-1 天前"
+    
     closes 需已按时间升序排列，closes[-1] 为最近日。
     """
-    if len(closes) < period + 1:
+    if len(closes) < period:
         return 0.0
     
     current = closes[-1]
-    past = closes[-period - 1]
+    past = closes[-period]  # 与个股动量口径一致
     
     if past <= 0:
         return 0.0
@@ -190,13 +198,15 @@ def _calc_volatility(closes: List[float], period: int) -> float:
     """
     计算波动率 (年化 %)，与 quarterly_data 口径一致。
     使用最近 period 个交易日的日收益率标准差，年化系数 sqrt(252)。
+    
+    注意：波动率需要 period+1 个数据点来计算 period 个日收益率。
     """
     import numpy as np
     
     if len(closes) < period + 1:
         return 0.0
     
-    # 计算日收益率（与 _calc_momentum 一致：closes 升序，取最近 period+1 个点）
+    # 计算日收益率：需要 period+1 个点来算 period 个收益率
     returns = np.diff(closes[-period-1:]) / np.array(closes[-period-1:-1])
     returns = np.nan_to_num(returns, nan=0.0, posinf=0.0, neginf=0.0)
     

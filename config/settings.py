@@ -97,7 +97,7 @@ BACKTEST_OUTPUT_CONFIG = {
 # 运行 python backtest.py 时使用这些配置
 BACKTEST_CONFIG = {
     # 回测日期范围
-    'start_date': '2025-01-01',     # 开始日期
+    'start_date': '2021-01-01',     # 开始日期
     'end_date': '2026-01-15',       # 结束日期（覆盖完整 Q1）
     
     # 资金和基准

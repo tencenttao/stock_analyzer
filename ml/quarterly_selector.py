@@ -605,7 +605,7 @@ def main():
     parser.add_argument('--backtest', action='store_true', help='运行历史回测')
     parser.add_argument('--select', type=str, help='为指定季度选股（如 2026Q1）')
     parser.add_argument('--top-n', type=int, default=DEFAULT_TOP_K, help=f'选股数量（默认{DEFAULT_TOP_K}）')
-    parser.add_argument('--start-year', type=int, default=2025, help='回测起始年份（默认2012，与optimizer一致）')
+    parser.add_argument('--start-year', type=int, default=2021, help='回测起始年份（默认2012，与optimizer一致）')
     parser.add_argument('--end-year', type=int, default=2025, help='回测结束年份（可选，默认到最新）')
     parser.add_argument('--window-quarters', type=int, default=8,
                         help=f'滑动窗口季度数，0=全部历史（默认{DEFAULT_WINDOW_QUARTERS}=2年）')
@@ -613,7 +613,7 @@ def main():
                         help='特征组: momentum=动量聚焦, base=估值+质量+动量, full=全特征(默认)')
     parser.add_argument('--model', type=str, choices=list(MODEL_CONFIGS.keys()), default='hgb_shallow',
                         help='模型配置: hgb_shallow, hgb_medium, hgb_deep(默认)')
-    parser.add_argument('--min-threshold', type=float, default=0,
+    parser.add_argument('--min-threshold', type=float, default=5,
                         help='最小预测阈值(%%)，低于此值不选入（如 2 表示只选预测跑赢基准2%%+的股票）')
     args = parser.parse_args()
 

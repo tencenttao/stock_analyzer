@@ -19,6 +19,11 @@
         ...
     }
 
+ML 策略回归阈值（与 quarterly_selector 一致）:
+    在 config/strategy_config.py 的 ml 策略 params 中设置 min_pred_threshold（%）：
+    - None: 不过滤，按预测收益/概率排序取 Top N
+    - 2: 只选预测相对收益 >= 2% 的股票（预测跑赢基准 2%+）
+
 编程使用:
     from backtest import run_backtest, run_select
     

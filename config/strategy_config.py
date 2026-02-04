@@ -198,6 +198,21 @@ STRATEGY_CONFIGS = {
             # 回测/选股时按当前月份匹配，未匹配则用 model_path。
             # 示例：25年1月用模型1，2月用模型2，其余用默认
             'model_schedule': {
+                # 2018
+                '2018-01': 'models/predictor_2018q1.pkl', '2018-02': 'models/predictor_2018q1.pkl', '2018-03': 'models/predictor_2018q1.pkl',
+                '2018-04': 'models/predictor_2018q2.pkl', '2018-05': 'models/predictor_2018q2.pkl', '2018-06': 'models/predictor_2018q2.pkl',
+                '2018-07': 'models/predictor_2018q3.pkl', '2018-08': 'models/predictor_2018q3.pkl', '2018-09': 'models/predictor_2018q3.pkl',
+                '2018-10': 'models/predictor_2018q4.pkl', '2018-11': 'models/predictor_2018q4.pkl', '2018-12': 'models/predictor_2018q4.pkl',
+                # 2019
+                '2019-01': 'models/predictor_2019q1.pkl', '2019-02': 'models/predictor_2019q1.pkl', '2019-03': 'models/predictor_2019q1.pkl',
+                '2019-04': 'models/predictor_2019q2.pkl', '2019-05': 'models/predictor_2019q2.pkl', '2019-06': 'models/predictor_2019q2.pkl',
+                '2019-07': 'models/predictor_2019q3.pkl', '2019-08': 'models/predictor_2019q3.pkl', '2019-09': 'models/predictor_2019q3.pkl',
+                '2019-10': 'models/predictor_2019q4.pkl', '2019-11': 'models/predictor_2019q4.pkl', '2019-12': 'models/predictor_2019q4.pkl',
+                # 2020
+                '2020-01': 'models/predictor_2020q1.pkl', '2020-02': 'models/predictor_2020q1.pkl', '2020-03': 'models/predictor_2020q1.pkl',
+                '2020-04': 'models/predictor_2020q2.pkl', '2020-05': 'models/predictor_2020q2.pkl', '2020-06': 'models/predictor_2020q2.pkl',
+                '2020-07': 'models/predictor_2020q3.pkl', '2020-08': 'models/predictor_2020q3.pkl', '2020-09': 'models/predictor_2020q3.pkl',
+                '2020-10': 'models/predictor_2020q4.pkl', '2020-11': 'models/predictor_2020q4.pkl', '2020-12': 'models/predictor_2020q4.pkl',
                 # 2021
                 '2021-01': 'models/predictor_2021q1.pkl', '2021-02': 'models/predictor_2021q1.pkl', '2021-03': 'models/predictor_2021q1.pkl',
                 '2021-04': 'models/predictor_2021q2.pkl', '2021-05': 'models/predictor_2021q2.pkl', '2021-06': 'models/predictor_2021q2.pkl',
@@ -226,6 +241,7 @@ STRATEGY_CONFIGS = {
             },
             #'model_schedule': None,                # 不配置则全程使用 model_path
             'min_prob_up': 0.0,                    # 最低上涨概率阈值（0=不过滤）
+            'min_pred_threshold': 5,            # 回归模型：最小预测相对收益(%)，低于此值不选入（如 2 表示只选预测跑赢基准2%+），None=不过滤
             'min_price': 2.0,                      # 最低股价
             'top_n': 10,
         }

@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_CONFIG = {
     'model_path': 'models/predictor.pkl',  # 默认模型路径
     'min_prob_up': 0.5,                    # 最低上涨概率阈值（0.5 可达到约70%精确率）
+    'min_pred_threshold': None,            # 回归模型：最小预测相对收益(%)，低于此值不选入（如 2 表示只选预测跑赢基准2%+）
     'min_price': 2.0,                      # 最低股价
     'max_stocks': 10,                      # 最大选股数量
 }
@@ -372,26 +373,68 @@ class MLStrategy(Strategy):
         # 6. 构建 code -> prediction 映射
         pred_map = {p.code: p for p in predictions}
         
-        # 7. 筛选高概率股票（只有 prob_up >= 阈值的才认为是"上涨"预测）
+        # 7. 筛选候选（支持两种阈值，与 quarterly_selector 一致）
         min_prob = self._config.get('min_prob_up', 0.5)
+        min_pred_threshold = self._config.get('min_pred_threshold')  # 回归模型：预测相对收益(%) 阈值
         candidates = []
         
         for stock in filtered:
             pred = pred_map.get(stock.code)
-            if pred and pred.prob_up >= min_prob:
-                stock.strength_score = pred.prob_up * 100
-                stock.strength_grade = self._calculate_grade(stock.strength_score)
-                stock.score_breakdown = {
-                    'prob_up': round(pred.prob_up * 100, 1),
-                    'prob_down': round(pred.prob_down * 100, 1),
-                    'prob_neutral': round(pred.prob_neutral * 100, 1),
-                }
-                stock.selection_reason = f"🤖 ML预测上涨概率: {pred.prob_up:.1%}"
-                candidates.append(stock)
+            if not pred:
+                continue
+            # 回归阈值：只选预测相对收益 >= 阈值的
+            if min_pred_threshold is not None:
+                if pred.predicted_return is None:
+                    continue
+                if pred.predicted_return < min_pred_threshold:
+                    continue
+                score = pred.predicted_return  # 用预测收益%作为排序分
+            else:
+                if pred.prob_up < min_prob:
+                    continue
+                score = pred.prob_up * 100
+            stock.strength_score = score if min_pred_threshold is not None else pred.prob_up * 100
+            stock.strength_grade = self._calculate_grade(stock.strength_score)
+            stock.score_breakdown = {
+                'prob_up': round(pred.prob_up * 100, 1),
+                'prob_down': round(pred.prob_down * 100, 1),
+                'prob_neutral': round(pred.prob_neutral * 100, 1),
+            }
+            if pred.predicted_return is not None:
+                stock.score_breakdown['pred_return_pct'] = round(pred.predicted_return, 2)
+            stock.selection_reason = (
+                f"🤖 ML预测相对收益: {pred.predicted_return:.1f}%" if pred.predicted_return is not None and min_pred_threshold is not None
+                else f"🤖 ML预测上涨概率: {pred.prob_up:.1%}"
+            )
+            candidates.append(stock)
         
-        logger.info(f"[ML策略] 高概率候选: {len(candidates)} 只 (prob_up >= {min_prob:.0%})")
+        if min_pred_threshold is not None:
+            logger.info(f"[ML策略] 满足预测阈值候选: {len(candidates)} 只 (pred_return >= {min_pred_threshold}%)")
+        else:
+            logger.info(f"[ML策略] 高概率候选: {len(candidates)} 只 (prob_up >= {min_prob:.0%})")
         
-        # 8. 按上涨概率排序
+        # 无满足阈值时：退化为按预测收益/概率取 Top N（与 quarterly_selector 一致）
+        if not candidates and filtered:
+            for stock in filtered:
+                pred = pred_map.get(stock.code)
+                if pred:
+                    score = pred.predicted_return if pred.predicted_return is not None else pred.prob_up * 100
+                    stock.strength_score = score
+                    stock.strength_grade = self._calculate_grade(stock.strength_score)
+                    stock.score_breakdown = {
+                        'prob_up': round(pred.prob_up * 100, 1),
+                        'prob_down': round(pred.prob_down * 100, 1),
+                        'prob_neutral': round(pred.prob_neutral * 100, 1),
+                    }
+                    if pred.predicted_return is not None:
+                        stock.score_breakdown['pred_return_pct'] = round(pred.predicted_return, 2)
+                    stock.selection_reason = f"🤖 ML预测相对收益: {pred.predicted_return:.1f}%" if pred.predicted_return is not None else f"🤖 ML预测上涨概率: {pred.prob_up:.1%}"
+                    candidates.append(stock)
+            candidates.sort(key=lambda x: x.strength_score, reverse=True)
+            candidates = candidates[:min(top_n, self._config.get('max_stocks', top_n))]
+            logger.info(f"[ML策略] 无满足阈值，按预测排序取 Top {len(candidates)}")
+        
+        # 8. 按得分排序（预测收益% 或 概率）
         candidates.sort(key=lambda x: x.strength_score, reverse=True)
         
         # 9. 取 Top N
