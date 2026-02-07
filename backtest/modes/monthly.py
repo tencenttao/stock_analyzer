@@ -155,13 +155,14 @@ class MonthlyMode:
         else:
             sampled_stocks = stock_list
         
-        # 步骤2: 获取买入日数据
+        # 步骤2: 获取买入日数据（进度每 100 条打印一次）
         logger.info(f"📊 获取 {buy_date} 的股票数据...")
         
         stock_data_list = []
+        n_total = len(sampled_stocks)
         for j, code in enumerate(sampled_stocks):
-            if j % 20 == 0:
-                logger.info(f"   进度: {j+1}/{len(sampled_stocks)}")
+            if (j + 1) % 100 == 0 or j + 1 == n_total:
+                logger.info(f"   进度: {j+1}/{n_total}")
             
             stock_data = self.data_source.get_stock_data(code, buy_date)
             if stock_data:

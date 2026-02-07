@@ -191,7 +191,7 @@ def run_select(
     # 获取股票数据
     stocks = []
     for i, code in enumerate(stock_codes):
-        if (i + 1) % 50 == 0:
+        if (i + 1) % 100 == 0 or i + 1 == len(stock_codes):
             logger.info(f"   进度: {i+1}/{len(stock_codes)}")
         stock = data_source.get_stock_data(code, date)
         if stock:

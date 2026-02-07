@@ -241,7 +241,7 @@ STRATEGY_CONFIGS = {
             },
             #'model_schedule': None,                # 不配置则全程使用 model_path
             'min_prob_up': 0.0,                    # 最低上涨概率阈值（0=不过滤）
-            'min_pred_threshold': 5,            # 回归模型：最小预测相对收益(%)，低于此值不选入（如 2 表示只选预测跑赢基准2%+），None=不过滤
+            'min_pred_threshold': 8,            # 回归模型：最小预测相对收益(%)，低于此值不选入（如 2 表示只选预测跑赢基准2%+），None=不过滤
             'min_price': 2.0,                      # 最低股价
             'top_n': 10,
         }

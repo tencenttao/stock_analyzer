@@ -348,7 +348,7 @@ class MLStrategy(Strategy):
         features_list = []
         if need_any_daily and self._data_source:
             for i, s in enumerate(filtered):
-                if (i + 1) % 50 == 0:
+                if (i + 1) % 100 == 0 or i + 1 == len(filtered):
                     logger.info(f"[ML策略]   进度: {i+1}/{len(filtered)}")
                 daily_data = self._data_source.get_daily_data(s.code, end_date=getattr(s, 'date', None), days=120)
                 market_data = None
