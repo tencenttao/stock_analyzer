@@ -100,7 +100,6 @@ def cmd_backtest():
         initial_capital=initial_capital,
         benchmark=benchmark,
         top_n=top_n,
-        sample_size=BACKTEST_CONFIG.get('sample_size', 300),
         random_seed=BACKTEST_CONFIG.get('random_seed', 42),
         enable_cost=BACKTEST_CONFIG.get('enable_cost', True),
     )
@@ -143,7 +142,6 @@ def cmd_compare():
         initial_capital=BACKTEST_CONFIG['initial_capital'],
         benchmark=BACKTEST_CONFIG['benchmark'],
         top_n=BACKTEST_CONFIG['top_n'],
-        sample_size=BACKTEST_CONFIG.get('sample_size', 300),
         random_seed=BACKTEST_CONFIG.get('random_seed', 42),
         enable_cost=BACKTEST_CONFIG.get('enable_cost', True),
     )
@@ -182,8 +180,11 @@ def cmd_select(date: str):
     strategy = StrategyRegistry.create(DEFAULT_STRATEGY)
     
     # 获取候选股票
-    logger.info("📋 获取沪深300成分股...")
-    stock_codes = data_source.get_csi300_stocks(date)
+    from config.settings import SELECTION_CONFIG
+    index_code = SELECTION_CONFIG.get('index_code', '000300')
+    index_name = {'000300': '沪深300', '000905': '中证500'}.get(index_code, index_code)
+    logger.info(f"📋 获取{index_name}成分股...")
+    stock_codes = data_source.get_index_constituents(index_code, date)
     logger.info(f"   候选股票: {len(stock_codes)} 只")
     
     # 获取股票数据

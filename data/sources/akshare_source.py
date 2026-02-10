@@ -284,43 +284,47 @@ class AkShareSource(DataSource):
             return []
     
     def get_index_constituents(self, index_code: str, date: str = None) -> List[str]:
-        """获取指数成分股"""
+        """获取指数成分股
+        
+        注意：AkShare 只能获取当前成分股，不支持历史成分股查询。
+        如果指定了历史日期，会发出警告。
+        """
         cache_key = f"index_{index_code}_{date or 'latest'}"
         if cache_key in self._cache:
             return self._cache[cache_key]
         
-        try:
-            self._rate_limit()
-            
-            # AkShare获取指数成分股
-            if index_code == '000300':
-                # 沪深300
-                df = self._ak.index_stock_cons_csindex(symbol="000300")
-            elif index_code == '000905':
-                # 中证500
-                df = self._ak.index_stock_cons_csindex(symbol="000905")
-            else:
-                df = self._ak.index_stock_cons_csindex(symbol=index_code)
-            
-            if df is None or df.empty:
-                return []
-            
-            # 提取成分股代码
-            if '成分券代码' in df.columns:
-                result = df['成分券代码'].astype(str).str.zfill(6).tolist()
-            elif '证券代码' in df.columns:
-                result = df['证券代码'].astype(str).str.zfill(6).tolist()
-            else:
-                # 尝试第一列
-                result = df.iloc[:, 0].astype(str).str.zfill(6).tolist()
-            
-            self._cache[cache_key] = result
-            logger.info(f"获取{index_code}成分股: {len(result)} 只")
-            return result
-            
-        except Exception as e:
-            logger.error(f"获取指数成分股失败: {e}")
-            return []
+        if date:
+            logger.warning(
+                f"AkShare 不支持历史成分股查询，{index_code} date={date} 将返回当前成分股。"
+                f"如需历史成分股，请使用 Tushare 数据源。"
+            )
+        
+        self._rate_limit()
+        
+        # AkShare获取指数成分股
+        if index_code == '000300':
+            df = self._ak.index_stock_cons_csindex(symbol="000300")
+        elif index_code == '000905':
+            df = self._ak.index_stock_cons_csindex(symbol="000905")
+        else:
+            df = self._ak.index_stock_cons_csindex(symbol=index_code)
+        
+        if df is None or df.empty:
+            raise ValueError(
+                f"无法获取 {index_code} 的成分股数据（AkShare 返回空）。"
+            )
+        
+        # 提取成分股代码
+        if '成分券代码' in df.columns:
+            result = df['成分券代码'].astype(str).str.zfill(6).tolist()
+        elif '证券代码' in df.columns:
+            result = df['证券代码'].astype(str).str.zfill(6).tolist()
+        else:
+            result = df.iloc[:, 0].astype(str).str.zfill(6).tolist()
+        
+        self._cache[cache_key] = result
+        logger.info(f"获取{index_code}成分股: {len(result)} 只")
+        return result
     
     def get_index_data(self, index_code: str, start_date: str, end_date: str) -> Optional[IndexData]:
         """获取指数数据"""
@@ -379,7 +383,9 @@ class AkShareSource(DataSource):
             df = self._ak.tool_trade_date_hist_sina()
             
             if df is None or df.empty:
-                return super().get_trading_calendar(start_date, end_date)
+                raise ValueError(
+                    f"无法获取交易日历 {start_date}~{end_date}（AkShare 返回空）。"
+                )
             
             # 转换日期格式
             df['trade_date'] = df['trade_date'].astype(str)
@@ -396,9 +402,10 @@ class AkShareSource(DataSource):
             
             return sorted(result)
             
+        except ValueError:
+            raise
         except Exception as e:
-            logger.warning(f"获取交易日历失败，使用默认: {e}")
-            return super().get_trading_calendar(start_date, end_date)
+            raise RuntimeError(f"获取交易日历失败: {e}")
     
     def batch_get_stock_data(self, codes: List[str], date: str) -> List[StockData]:
         """批量获取股票数据"""

@@ -13,6 +13,23 @@
     }
 """
 
+
+def _build_model_schedule(index_tag: str = 'csi300', model_tag: str = 'rf_200',
+                          start_year: int = 2012, end_year: int = 2025) -> dict:
+    """动态生成季度模型调度表。
+    文件命名: models/{index_tag}_{model_tag}_{year}q{quarter}.pkl
+    每季度3个月共用一个模型。
+    """
+    schedule = {}
+    quarter_months = {1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12]}
+    for year in range(start_year, end_year + 1):
+        for q, months in quarter_months.items():
+            path = f'models/{index_tag}_{model_tag}_{year}q{q}.pkl'
+            for m in months:
+                schedule[f'{year}-{m:02d}'] = path
+    return schedule
+
+
 # 默认策略（推荐使用自适应策略）
 DEFAULT_STRATEGY = 'ml'
 
@@ -188,62 +205,25 @@ STRATEGY_CONFIGS = {
     # ============================================
     # 机器学习策略
     # ============================================
+    # 与 config/settings.py 的 BACKTEST_CONFIG['benchmark']（或 backtest.py --benchmark）一致：
+    # - 沪深300 回测：model_schedule 用 csi300、index_code 用 000300
+    # - 中证500 回测：model_schedule 用 csi500、index_code 用 000905
     'ml': {
         'name': '机器学习选股',
         'description': '基于ML模型预测上涨概率，选择概率最高的股票',
         'params': {
             # 单模型：固定使用该路径
             #'model_path': 'models/predictor.pkl',
-            # 可选：按月份切换模型。key 为 "YYYY-MM" 或 "default"，value 为模型路径。
-            # 回测/选股时按当前月份匹配，未匹配则用 model_path。
-            # 示例：25年1月用模型1，2月用模型2，其余用默认
-            'model_schedule': {
-                # 2018
-                '2018-01': 'models/predictor_2018q1.pkl', '2018-02': 'models/predictor_2018q1.pkl', '2018-03': 'models/predictor_2018q1.pkl',
-                '2018-04': 'models/predictor_2018q2.pkl', '2018-05': 'models/predictor_2018q2.pkl', '2018-06': 'models/predictor_2018q2.pkl',
-                '2018-07': 'models/predictor_2018q3.pkl', '2018-08': 'models/predictor_2018q3.pkl', '2018-09': 'models/predictor_2018q3.pkl',
-                '2018-10': 'models/predictor_2018q4.pkl', '2018-11': 'models/predictor_2018q4.pkl', '2018-12': 'models/predictor_2018q4.pkl',
-                # 2019
-                '2019-01': 'models/predictor_2019q1.pkl', '2019-02': 'models/predictor_2019q1.pkl', '2019-03': 'models/predictor_2019q1.pkl',
-                '2019-04': 'models/predictor_2019q2.pkl', '2019-05': 'models/predictor_2019q2.pkl', '2019-06': 'models/predictor_2019q2.pkl',
-                '2019-07': 'models/predictor_2019q3.pkl', '2019-08': 'models/predictor_2019q3.pkl', '2019-09': 'models/predictor_2019q3.pkl',
-                '2019-10': 'models/predictor_2019q4.pkl', '2019-11': 'models/predictor_2019q4.pkl', '2019-12': 'models/predictor_2019q4.pkl',
-                # 2020
-                '2020-01': 'models/predictor_2020q1.pkl', '2020-02': 'models/predictor_2020q1.pkl', '2020-03': 'models/predictor_2020q1.pkl',
-                '2020-04': 'models/predictor_2020q2.pkl', '2020-05': 'models/predictor_2020q2.pkl', '2020-06': 'models/predictor_2020q2.pkl',
-                '2020-07': 'models/predictor_2020q3.pkl', '2020-08': 'models/predictor_2020q3.pkl', '2020-09': 'models/predictor_2020q3.pkl',
-                '2020-10': 'models/predictor_2020q4.pkl', '2020-11': 'models/predictor_2020q4.pkl', '2020-12': 'models/predictor_2020q4.pkl',
-                # 2021
-                '2021-01': 'models/predictor_2021q1.pkl', '2021-02': 'models/predictor_2021q1.pkl', '2021-03': 'models/predictor_2021q1.pkl',
-                '2021-04': 'models/predictor_2021q2.pkl', '2021-05': 'models/predictor_2021q2.pkl', '2021-06': 'models/predictor_2021q2.pkl',
-                '2021-07': 'models/predictor_2021q3.pkl', '2021-08': 'models/predictor_2021q3.pkl', '2021-09': 'models/predictor_2021q3.pkl',
-                '2021-10': 'models/predictor_2021q4.pkl', '2021-11': 'models/predictor_2021q4.pkl', '2021-12': 'models/predictor_2021q4.pkl',
-                # 2022
-                '2022-01': 'models/predictor_2022q1.pkl', '2022-02': 'models/predictor_2022q1.pkl', '2022-03': 'models/predictor_2022q1.pkl',
-                '2022-04': 'models/predictor_2022q2.pkl', '2022-05': 'models/predictor_2022q2.pkl', '2022-06': 'models/predictor_2022q2.pkl',
-                '2022-07': 'models/predictor_2022q3.pkl', '2022-08': 'models/predictor_2022q3.pkl', '2022-09': 'models/predictor_2022q3.pkl',
-                '2022-10': 'models/predictor_2022q4.pkl', '2022-11': 'models/predictor_2022q4.pkl', '2022-12': 'models/predictor_2022q4.pkl',
-                # 2023
-                '2023-01': 'models/predictor_2023q1.pkl', '2023-02': 'models/predictor_2023q1.pkl', '2023-03': 'models/predictor_2023q1.pkl',
-                '2023-04': 'models/predictor_2023q2.pkl', '2023-05': 'models/predictor_2023q2.pkl', '2023-06': 'models/predictor_2023q2.pkl',
-                '2023-07': 'models/predictor_2023q3.pkl', '2023-08': 'models/predictor_2023q3.pkl', '2023-09': 'models/predictor_2023q3.pkl',
-                '2023-10': 'models/predictor_2023q4.pkl', '2023-11': 'models/predictor_2023q4.pkl', '2023-12': 'models/predictor_2023q4.pkl',
-                # 2024
-                '2024-01': 'models/predictor_2024q1.pkl', '2024-02': 'models/predictor_2024q1.pkl', '2024-03': 'models/predictor_2024q1.pkl',
-                '2024-04': 'models/predictor_2024q2.pkl', '2024-05': 'models/predictor_2024q2.pkl', '2024-06': 'models/predictor_2024q2.pkl',
-                '2024-07': 'models/predictor_2024q3.pkl', '2024-08': 'models/predictor_2024q3.pkl', '2024-09': 'models/predictor_2024q3.pkl',
-                '2024-10': 'models/predictor_2024q4.pkl', '2024-11': 'models/predictor_2024q4.pkl', '2024-12': 'models/predictor_2024q4.pkl',
-                # 2025
-                '2025-01': 'models/predictor_2025q1.pkl', '2025-02': 'models/predictor_2025q1.pkl', '2025-03': 'models/predictor_2025q1.pkl',
-                '2025-04': 'models/predictor_2025q2.pkl', '2025-05': 'models/predictor_2025q2.pkl', '2025-06': 'models/predictor_2025q2.pkl',
-                '2025-07': 'models/predictor_2025q3.pkl', '2025-08': 'models/predictor_2025q3.pkl', '2025-09': 'models/predictor_2025q3.pkl',
-                '2025-10': 'models/predictor_2025q4.pkl', '2025-11': 'models/predictor_2025q4.pkl', '2025-12': 'models/predictor_2025q4.pkl',
-            },
+            # 季度模型调度表（与候选池一致：沪深300用csi300，中证500用csi500）
+            # 命名格式: models/{index_tag}_{model_tag}_{year}q{quarter}.pkl
+            #'model_schedule': _build_model_schedule('csi500', 'rf_200', 2022, 2026),
+            'model_schedule': _build_model_schedule('csi300', 'rf_200', 2021, 2025),
+            'index_code': '000300',                # 与 benchmark 一致（000300=沪深300, 000905=中证500）
             #'model_schedule': None,                # 不配置则全程使用 model_path
             'min_prob_up': 0.0,                    # 最低上涨概率阈值（0=不过滤）
-            'min_pred_threshold': 8,            # 回归模型：最小预测相对收益(%)，低于此值不选入（如 2 表示只选预测跑赢基准2%+），None=不过滤
+            'min_pred_threshold': 0,            # 回归模型：最小预测相对收益(%)，低于此值不选入（如 2 表示只选预测跑赢基准2%+），None=不过滤
             'min_price': 2.0,                      # 最低股价
-            'top_n': 10,
+            'top_n': 5,
         }
     },
     

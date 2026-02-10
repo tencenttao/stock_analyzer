@@ -36,8 +36,9 @@
     python ml/quarterly_selector.py --backtest --features base
     python ml/quarterly_selector.py --backtest --features full
 
-    # 切换模型配置：hgb_shallow | hgb_medium | hgb_deep
+    # 切换模型配置：hgb_shallow | hgb_medium | hgb_deep | rf_100 | rf_200
     python ml/quarterly_selector.py --backtest --model hgb_deep
+    python ml/quarterly_selector.py --backtest --model rf_200
 
     # 使用预测阈值过滤（只选预测跑赢基准 2%+ 的股票）
     python ml/quarterly_selector.py --backtest --min-threshold 2
@@ -62,8 +63,12 @@ from collections import defaultdict
 from ml.models import create_model, REGRESSOR_PRESETS
 
 
-# 数据目录
-DATA_DIR = './data/quarterly_data'
+# 数据目录（按指数区分）
+DATA_DIRS = {
+    '000300': './data/quarterly_data_v2',
+    '000905': './data/quarterly_data_csi500',
+}
+DATA_DIR = DATA_DIRS['000300']  # 默认沪深300
 
 # 排除的特征（噪声或未来信息）
 EXCLUDE_FEATURES = {'price', 'change_pct', 'turnover', 'volume', 'revenue_growth'}
@@ -103,13 +108,13 @@ FEATURE_SETS = {
 }
 BEST_FEATURES = ALL_FEATURES  # 默认与 strategy_optimizer 一致用 full
 
-# 模型配置：与 ml.models.REGRESSOR_PRESETS 统一，仅保留 HGB 预设
-MODEL_CONFIGS = {k: v for k, v in REGRESSOR_PRESETS.items() if v.get('model') == 'hgb'}
-# 默认模型配置（create_sklearn_regressor 接受 {model, params} 或纯 params）
+# 模型配置：与 ml.models.REGRESSOR_PRESETS 统一（含 HGB 与 RF 预设）
+MODEL_CONFIGS = dict(REGRESSOR_PRESETS)
+# 默认模型配置（create_model(config) 接受 {model, params}）
 MODEL_CONFIG = MODEL_CONFIGS['hgb_shallow']
 
 # 策略配置（与 strategy_optimizer 一致：窗口按季度数）
-DEFAULT_TOP_K = 10           # 默认选股数量（Top 5 精度最高，Top 10 Alpha 最高）
+DEFAULT_TOP_K = 5           # 默认选股数量（Top 5 精度最高，Top 10 Alpha 最高）
 DEFAULT_WINDOW_QUARTERS = 8  # 默认训练窗口（8 季度 = 2 年）
 MIN_PRED_THRESHOLD = 2.0     # 最小预测阈值（略有帮助）
 MIN_TRAIN_MONTHS = 2         # 按月训练时至少需要的训练月数
@@ -605,28 +610,34 @@ def main():
     parser.add_argument('--backtest', action='store_true', help='运行历史回测')
     parser.add_argument('--select', type=str, help='为指定季度选股（如 2026Q1）')
     parser.add_argument('--top-n', type=int, default=DEFAULT_TOP_K, help=f'选股数量（默认{DEFAULT_TOP_K}）')
-    parser.add_argument('--start-year', type=int, default=2020, help='回测起始年份（默认2012，与optimizer一致）')
+    parser.add_argument('--start-year', type=int, default=2021, help='回测起始年份（默认2012，与optimizer一致）')
     parser.add_argument('--end-year', type=int, default=2025, help='回测结束年份（可选，默认到最新）')
     parser.add_argument('--window-quarters', type=int, default=8,
                         help=f'滑动窗口季度数，0=全部历史（默认{DEFAULT_WINDOW_QUARTERS}=2年）')
     parser.add_argument('--features', type=str, choices=list(FEATURE_SETS.keys()), default='full',
                         help='特征组: momentum=动量聚焦, base=估值+质量+动量, full=全特征(默认)')
-    parser.add_argument('--model', type=str, choices=list(MODEL_CONFIGS.keys()), default='hgb_shallow',
+    parser.add_argument('--model', type=str, choices=list(MODEL_CONFIGS.keys()), default='rf_200',
                         help='模型配置: hgb_shallow, hgb_medium, hgb_deep(默认)')
-    parser.add_argument('--min-threshold', type=float, default=8,
+    parser.add_argument('--min-threshold', type=float, default=0,
                         help='最小预测阈值(%%)，低于此值不选入（如 2 表示只选预测跑赢基准2%%+的股票）')
+    parser.add_argument('--index', default='000300', choices=['000300', '000905'],
+                        help='指数代码: 000300=沪深300(默认), 000905=中证500')
     args = parser.parse_args()
 
     window_quarters = args.window_quarters if args.window_quarters is not None else DEFAULT_WINDOW_QUARTERS
     min_pred_threshold = args.min_threshold
     
+    # 切换数据目录（按指数）
+    global BEST_FEATURES, MODEL_CONFIG, DATA_DIR
+    DATA_DIR = DATA_DIRS.get(args.index, DATA_DIRS['000300'])
+    index_name = {'000300': '沪深300', '000905': '中证500'}.get(args.index, args.index)
+    
     # 切换特征组和模型配置
-    global BEST_FEATURES, MODEL_CONFIG
     BEST_FEATURES = FEATURE_SETS[args.features]
     MODEL_CONFIG = MODEL_CONFIGS[args.model]
     params = MODEL_CONFIG.get('params', MODEL_CONFIG)
     threshold_str = f" 阈值>{min_pred_threshold}%" if min_pred_threshold is not None else ""
-    print(f"配置: 特征={args.features}({len(BEST_FEATURES)}个) 模型={args.model}(depth={params.get('max_depth', '')}) 窗口={window_quarters}季 Top{args.top_n}{threshold_str}")
+    print(f"配置: 指数={index_name} 特征={args.features}({len(BEST_FEATURES)}个) 模型={args.model}(depth={params.get('max_depth', '')}) 窗口={window_quarters}季 Top{args.top_n}{threshold_str}")
     print("=" * 70)
     
     if args.backtest:

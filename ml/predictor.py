@@ -243,6 +243,9 @@ class StockPredictor:
             if model_type in ('hgb_regressor', 'hgb', 'hgb_shallow', 'hgb_deep'):
                 from .models.hgb_regressor import HGBRegressorModel
                 self.model = HGBRegressorModel()
+            elif model_type in ('rf_regressor', 'rf', 'rf_100', 'rf_200'):
+                from .models.random_forest_regressor import RandomForestRegressorModel
+                self.model = RandomForestRegressorModel()
             # 其他类型保持默认包装器
             
             # 加载模型数据到包装器

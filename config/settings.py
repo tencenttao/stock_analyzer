@@ -32,7 +32,7 @@ LOG_CONFIG = {
 }
 
 # ===== 缓存配置 =====
-CACHE_EXPIRE_DAYS = 7       # 缓存过期天数
+CACHE_EXPIRE_DAYS = 700       # 缓存过期天数
 USE_MEMORY_CACHE = True     # 启用内存缓存
 USE_FILE_CACHE = True       # 启用文件缓存
 
@@ -79,11 +79,11 @@ BACKTEST_FILTER_CONFIG = {
 }
 
 # ===== 回测采样配置 =====
+# 候选池已改为“基准指数全部成分股”，不再采样
 BACKTEST_SAMPLE_CONFIG = {
-    'sample_size': 300,          # 采样数量（300=全部沪深300成分股）
-    'random_seed': 42,           # 固定随机种子
-    'use_cache': True,           # 启用缓存
-    'cache_expire_days': 7       # 缓存过期天数
+    'random_seed': 42,
+    'use_cache': True,
+    'cache_expire_days': 7
 }
 
 # ===== 回测输出配置 =====
@@ -102,11 +102,10 @@ BACKTEST_CONFIG = {
     
     # 资金和基准
     'initial_capital': 100000,      # 初始资金
-    'benchmark': '000300',          # 基准指数（沪深300）
+    'benchmark': '000905',          # 基准指数（000300=沪深300, 000905=中证500）
     
-    # 选股参数
-    'top_n': 10,                    # 每月选股数量
-    'sample_size': 300,             # 采样股票数
+    # 选股参数（候选池=基准指数全部成分股）
+    'top_n': 5,                     # 每月选股数量
     'random_seed': 42,              # 随机种子
     
     # 交易成本
@@ -126,7 +125,7 @@ BACKTEST_DEFAULTS = BACKTEST_CONFIG
 
 # ===== 选股配置 =====
 SELECTION_CONFIG = {
-    'index_code': '000300',         # 默认股票池（沪深300）
+    'index_code': '000300',         # 默认股票池（000300=沪深300, 000905=中证500）
     'min_score': 40,                # 最低评分阈值
 }
 

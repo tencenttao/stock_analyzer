@@ -27,9 +27,8 @@ class MonthlyConfig:
     end_date: str                       # 结束日期 (YYYY-MM-DD)
     initial_capital: float = 100000     # 初始资金
     top_n: int = 10                     # 每月选股数量
-    sample_size: int = 100              # 每月采样股票数
-    random_seed: int = 42               # 随机种子
-    benchmark: str = '000300'           # 基准指数
+    random_seed: int = 42                # 随机种子
+    benchmark: str = '000300'           # 基准指数（候选池=该指数全部成分股）
 
 
 @dataclass
@@ -147,20 +146,12 @@ class MonthlyMode:
             logger.error("无法获取指数成分股列表")
             return None
         
-        # 采样
-        import random
-        random.seed(self.config.random_seed + month_index)
-        if self.config.sample_size < len(stock_list):
-            sampled_stocks = random.sample(stock_list, self.config.sample_size)
-        else:
-            sampled_stocks = stock_list
-        
-        # 步骤2: 获取买入日数据（进度每 100 条打印一次）
-        logger.info(f"📊 获取 {buy_date} 的股票数据...")
+        # 使用指数全部成分股，不采样
+        logger.info(f"📊 获取 {buy_date} 的股票数据（共 {len(stock_list)} 只）...")
         
         stock_data_list = []
-        n_total = len(sampled_stocks)
-        for j, code in enumerate(sampled_stocks):
+        n_total = len(stock_list)
+        for j, code in enumerate(stock_list):
             if (j + 1) % 100 == 0 or j + 1 == n_total:
                 logger.info(f"   进度: {j+1}/{n_total}")
             
@@ -242,10 +233,11 @@ class MonthlyMode:
         
         alpha = avg_return - benchmark_return
         
-        # 输出月度统计
+        # 输出月度统计（基准名称随 config.benchmark 显示）
+        benchmark_name = {'000300': '沪深300', '000905': '中证500'}.get(self.config.benchmark, self.config.benchmark)
         logger.info(f"\n📊 本月统计:")
         logger.info(f"   • 策略收益: {avg_return:+.2f}%")
-        logger.info(f"   • 沪深300: {benchmark_return:+.2f}%")
+        logger.info(f"   • {benchmark_name}: {benchmark_return:+.2f}%")
         logger.info(f"   • 超额收益: {alpha:+.2f}% {'✅' if alpha > 0 else '❌'}")
         logger.info(f"   • 组合价值: ¥{new_portfolio_value:,.2f}")
         logger.info(f"   • 基准价值: ¥{new_benchmark_value:,.2f}")

@@ -60,6 +60,7 @@ def run_backtest(
     top_n: int = None,
     benchmark: str = None,
     save_report: bool = None,
+    enable_cost: bool = None,
 ):
     """
     执行月度轮换回测
@@ -75,6 +76,7 @@ def run_backtest(
         top_n: 每月选股数量，默认从配置读取
         benchmark: 基准指数，默认从配置读取
         save_report: 是否保存报告，默认从配置读取
+        enable_cost: 是否计算交易成本，默认从配置读取
     
     Returns:
         BacktestResult: 回测结果
@@ -94,6 +96,7 @@ def run_backtest(
     top_n = top_n or BACKTEST_CONFIG['top_n']
     benchmark = benchmark or BACKTEST_CONFIG['benchmark']
     save_report = save_report if save_report is not None else BACKTEST_CONFIG.get('save_report', True)
+    enable_cost = enable_cost if enable_cost is not None else BACKTEST_CONFIG.get('enable_cost', False)
     
     logger.info("=" * 60)
     logger.info("📅 月度轮换回测")
@@ -104,6 +107,7 @@ def run_backtest(
     logger.info(f"💰 初始资金: ¥{initial_capital:,.0f}")
     logger.info(f"🎯 每月选股: {top_n} 只")
     logger.info(f"📈 基准指数: {benchmark}")
+    logger.info(f"💸 交易成本: {'是' if enable_cost else '否'}")
     logger.info("=" * 60)
     
     # 初始化
@@ -121,9 +125,8 @@ def run_backtest(
         initial_capital=initial_capital,
         benchmark=benchmark,
         top_n=top_n,
-        sample_size=BACKTEST_CONFIG.get('sample_size', 300),
         random_seed=BACKTEST_CONFIG.get('random_seed', 42),
-        enable_cost=BACKTEST_CONFIG.get('enable_cost', True),
+        enable_cost=enable_cost,
     )
     
     # 执行回测
@@ -184,9 +187,11 @@ def run_select(
     if hasattr(strategy, 'set_data_source'):
         strategy.set_data_source(data_source)
     
-    # 获取候选股票
-    stock_codes = data_source.get_csi300_stocks(date)
-    logger.info(f"📋 候选股票: {len(stock_codes)} 只")
+    # 获取候选股票（使用 BACKTEST_CONFIG 中的 benchmark 指数）
+    index_code = BACKTEST_CONFIG.get('benchmark', '000300')
+    stock_codes = data_source.get_index_constituents(index_code, date)
+    index_name = {'000300': '沪深300', '000905': '中证500'}.get(index_code, index_code)
+    logger.info(f"📋 候选股票({index_name}): {len(stock_codes)} 只")
     
     # 获取股票数据
     stocks = []
@@ -314,10 +319,11 @@ def main():
     主函数 - 直接从配置文件读取参数执行回测
     
     使用方法:
-        python backtest.py              # 执行回测（使用配置文件参数）
-        python backtest.py --config     # 显示当前配置
-        python backtest.py --strategies # 列出可用策略
-        python backtest.py --compare    # 策略对比
+        python backtest.py                    # 执行回测（使用配置文件默认策略）
+        python backtest.py --strategy random  # 使用随机策略回测（基线对照）
+        python backtest.py --config          # 显示当前配置
+        python backtest.py --strategies       # 列出可用策略
+        python backtest.py --compare         # 策略对比
     """
     import argparse
     
@@ -325,28 +331,47 @@ def main():
         description='JYS股票回测系统 - 配置驱动版',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-使用方法:
-  1. 编辑 config/settings.py 中的 BACKTEST_CONFIG
-  2. 运行 python backtest.py
+常用命令:
+  python backtest.py                        # 使用配置文件默认
+  python backtest.py --start 2024-01-01 --end 2024-12-31
+  python backtest.py --top-n 5 --strategy ml
+  python backtest.py --enable-cost          # 开启交易成本
+  python backtest.py --no-cost              # 关闭交易成本
 
-示例配置 (config/settings.py):
-  BACKTEST_CONFIG = {
-      'start_date': '2024-01-01',
-      'end_date': '2024-12-31',
-      'initial_capital': 100000,
-      'top_n': 10,
-      ...
-  }
+未指定的参数从 config/settings.py 的 BACKTEST_CONFIG 读取。
         """
     )
     
-    # 只保留几个简单的命令选项
+    # 回测常用参数（不指定则用 config/settings.py 中的 BACKTEST_CONFIG）
+    parser.add_argument('--start', metavar='DATE', type=str, default='2021-01-01',
+                        help='回测开始日期 (YYYY-MM-DD)')
+    parser.add_argument('--end', metavar='DATE', type=str, default='2026-01-15',
+                        help='回测结束日期 (YYYY-MM-DD)')
+    parser.add_argument('--top-n', metavar='N', type=int, default=5,
+                        help='每月选股数量')
+    parser.add_argument('--benchmark', metavar='CODE', type=str, default='000300',
+                        choices=['000300', '000905'],
+                        help='股票候选池/基准指数: 000300=沪深300, 000905=中证500')
+    parser.add_argument('--enable-cost', action='store_true',
+                        help='计算交易成本（佣金/印花税/滑点）')
+    parser.add_argument('--no-cost', action='store_true',
+                        help='不计算交易成本（默认以配置文件为准）')
+    # 其他
     parser.add_argument('--config', action='store_true', help='显示当前配置')
     parser.add_argument('--strategies', action='store_true', help='列出可用策略')
+    parser.add_argument('--strategy', metavar='NAME', type=str, default='ml',
+                        help='指定策略名称（如 ml, random, momentum_v2）')
     parser.add_argument('--compare', action='store_true', help='策略对比回测')
     parser.add_argument('--select', metavar='DATE', help='执行选股（指定日期）')
     
     args = parser.parse_args()
+    
+    # 交易成本：--no-cost 优先于 --enable-cost，都未指定则用配置文件
+    enable_cost = None
+    if args.no_cost:
+        enable_cost = False
+    elif args.enable_cost:
+        enable_cost = True
     
     try:
         if args.config:
@@ -356,10 +381,16 @@ def main():
         elif args.compare:
             run_compare()
         elif args.select:
-            run_select(date=args.select)
+            run_select(date=args.select, strategy_name=args.strategy)
         else:
-            # 默认：执行回测
-            run_backtest()
+            run_backtest(
+                strategy_name=args.strategy,
+                start_date=args.start,
+                end_date=args.end,
+                top_n=args.top_n,
+                benchmark=args.benchmark,
+                enable_cost=enable_cost,
+            )
         
         return 0
         

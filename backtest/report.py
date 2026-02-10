@@ -83,8 +83,10 @@ class BacktestReport:
             logger.info(f"   • 胜率: {metrics.win_rate:.1f}%")
             logger.info(f"   • 盈亏比: {metrics.profit_loss_ratio:.2f}")
         
-        # 与基准对比
-        logger.info(f"\n📊 与沪深300对比:")
+        # 与基准对比（基准名称随 config.benchmark 显示）
+        benchmark_code = result.config.get('benchmark', '000300')
+        benchmark_name = {'000300': '沪深300', '000905': '中证500'}.get(benchmark_code, benchmark_code)
+        logger.info(f"\n📊 与{benchmark_name}对比:")
         logger.info(f"   • 基准收益: {result.benchmark_return:+.2f}%")
         logger.info(f"   • 超额收益 (Alpha): {result.alpha:+.2f}%")
         

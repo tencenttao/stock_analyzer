@@ -5,11 +5,11 @@
 输出目录: data/quarterly_data
 
 用法:
-  # 生成 2010-2014 年所有季度数据（4个并行进程）
+  # 生成 2010-2014 年所有季度数据（4个并行进程，默认沪深300）
   python ml/batch_build_data.py --years 2010 2011 2012 2013 2014 --parallel 4
 
-  # 生成 2015-2017 年
-  python ml/batch_build_data.py --years 2015 2016 2017 --parallel 4
+  # 生成中证500训练数据
+  python ml/batch_build_data.py --years 2015 2016 2017 --index 000905 --output-dir data/quarterly_data_csi500
 
   # 只生成特定季度
   python ml/batch_build_data.py --quarters 2015_Q1 2015_Q2
@@ -52,10 +52,11 @@ def get_quarter_date_range(year: int, quarter: str) -> tuple:
     return start_date, end_date
 
 
-def build_quarter_data(year: int, quarter: str, use_cache: bool = True) -> dict:
+def build_quarter_data(year: int, quarter: str, use_cache: bool = True, output_dir: str = None, index_code: str = '000300', parallel: bool = False) -> dict:
     """生成单个季度的数据"""
+    target_dir = output_dir or OUTPUT_DIR
     quarter_name = f"{year}_{quarter}"
-    output_file = os.path.join(OUTPUT_DIR, f"{quarter_name}_ml_training_data.json")
+    output_file = os.path.join(target_dir, f"{quarter_name}_ml_training_data.json")
     
     # 如果文件已存在，跳过
     if os.path.exists(output_file):
@@ -72,19 +73,21 @@ def build_quarter_data(year: int, quarter: str, use_cache: bool = True) -> dict:
         '--start', start_date,
         '--end', end_date,
         '--output', output_file,
-        '--config', 'full'
+        '--config', 'full',
+        '--index', index_code,
     ]
     
     if use_cache:
         cmd.append('--use-cache')
     
     try:
+        # parallel=False 时实时输出日志；parallel=True 时由外层汇总进度
         result = subprocess.run(
             cmd,
             cwd=ROOT_DIR,
-            capture_output=True,
-            text=True,
-            timeout=1800  # 30分钟超时
+            capture_output=parallel,     # 并行时捕获避免交错，串行时实时输出
+            text=parallel,
+            timeout=1800,  # 30分钟超时
         )
         
         if result.returncode == 0 and os.path.exists(output_file):
@@ -99,11 +102,14 @@ def build_quarter_data(year: int, quarter: str, use_cache: bool = True) -> dict:
                 'file': output_file
             }
         else:
-            print(f"[{quarter_name}] 失败: {result.stderr[:500] if result.stderr else 'unknown error'}")
+            err_msg = ''
+            if parallel and hasattr(result, 'stderr') and result.stderr:
+                err_msg = result.stderr[:300]
+            print(f"[{quarter_name}] 失败 (exit code={result.returncode}) {err_msg}")
             return {
                 'quarter': quarter_name,
                 'status': 'failed',
-                'error': result.stderr[:500] if result.stderr else 'unknown error'
+                'error': err_msg or f'exit code={result.returncode}'
             }
     except subprocess.TimeoutExpired:
         print(f"[{quarter_name}] 超时")
@@ -115,8 +121,11 @@ def build_quarter_data(year: int, quarter: str, use_cache: bool = True) -> dict:
 
 def build_quarter_wrapper(args):
     """包装函数，用于并行执行"""
-    year, quarter, use_cache = args
-    return build_quarter_data(year, quarter, use_cache)
+    year, quarter, use_cache = args[:3]
+    output_dir = args[3] if len(args) > 3 else None
+    index_code = args[4] if len(args) > 4 else '000300'
+    parallel = args[5] if len(args) > 5 else False
+    return build_quarter_data(year, quarter, use_cache, output_dir, index_code, parallel)
 
 
 def check_data_integrity():
@@ -210,8 +219,8 @@ def check_data_integrity():
 
 def main():
     parser = argparse.ArgumentParser(description='批量生成季度训练数据')
-    parser.add_argument('--years', nargs='+', type=int, default=[2015, 2016, 2017],
-                        help='要生成的年份列表，默认 2015 2016 2017')
+    parser.add_argument('--years', nargs='+', type=int, default=[2010, 2011, 2012, 2013, 2014, 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025],
+                        help='要生成的年份列表，默认 2015 2016 2025')
     parser.add_argument('--quarters', nargs='+', type=str, default=None,
                         help='指定季度，如 2015_Q1 2015_Q2')
     parser.add_argument('--parallel', type=int, default=1,
@@ -224,15 +233,32 @@ def main():
                         help='使用缓存数据（默认启用，可加速）')
     parser.add_argument('--no-cache', action='store_true',
                         help='不使用缓存，强制从 API 获取')
+    parser.add_argument('--output-dir', type=str, default='data/quarterly_data_csi500',
+                        help='输出目录（默认 data/quarterly_data_v2）')
+    parser.add_argument('--index', default='000905', choices=['000300', '000905'],
+                        help='指数代码: 000300=沪深300(默认), 000905=中证500')
     
     args = parser.parse_args()
     
     # 处理缓存选项
     use_cache = args.use_cache and not args.no_cache
     
+    # 处理输出目录
+    output_dir = args.output_dir
+    if output_dir and not os.path.isabs(output_dir):
+        output_dir = os.path.join(ROOT_DIR, output_dir)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    
     if args.check:
         check_data_integrity()
         return
+    
+    target_dir = output_dir or OUTPUT_DIR
+    
+    index_code = args.index
+    
+    is_parallel = args.parallel > 1
     
     # 确定要生成的季度
     if args.quarters:
@@ -242,28 +268,30 @@ def main():
             if len(parts) == 2:
                 year = int(parts[0])
                 quarter = parts[1]
-                tasks.append((year, quarter, use_cache))
+                tasks.append((year, quarter, use_cache, output_dir, index_code, is_parallel))
     else:
         tasks = []
         for year in args.years:
             for q in ['Q1', 'Q2', 'Q3', 'Q4']:
-                tasks.append((year, q, use_cache))
+                tasks.append((year, q, use_cache, output_dir, index_code, is_parallel))
     
     # 如果强制重新生成，删除已存在的文件
     if args.force:
-        for year, quarter, _ in tasks:
-            output_file = os.path.join(OUTPUT_DIR, f"{year}_{quarter}_ml_training_data.json")
+        for year, quarter, *_ in tasks:
+            output_file = os.path.join(target_dir, f"{year}_{quarter}_ml_training_data.json")
             if os.path.exists(output_file):
                 os.remove(output_file)
                 print(f"已删除: {output_file}")
     
+    index_name = {'000300': '沪深300', '000905': '中证500'}.get(index_code, index_code)
     print("=" * 60)
     print(f"批量生成季度数据")
     print("=" * 60)
+    print(f"指数: {index_name} ({index_code})")
     print(f"待生成季度: {len(tasks)}")
     print(f"并行进程数: {args.parallel}")
     print(f"使用缓存: {'是' if use_cache else '否（从API获取）'}")
-    print(f"输出目录: {OUTPUT_DIR}")
+    print(f"输出目录: {target_dir}")
     print("=" * 60)
     
     if args.parallel > 4 and not use_cache:
@@ -271,6 +299,7 @@ def main():
         print("    建议: 使用 --use-cache 或降低并行数\n")
     
     results = []
+    total = len(tasks)
     
     if args.parallel > 1:
         with ProcessPoolExecutor(max_workers=args.parallel) as executor:
@@ -278,10 +307,19 @@ def main():
             for future in as_completed(futures):
                 result = future.result()
                 results.append(result)
+                done = len(results)
+                status = result.get('status', '?')
+                qname = result.get('quarter', '?')
+                info = f"{result.get('records', 0)}条" if status == 'success' else status
+                print(f"[进度 {done}/{total}] {qname}: {info}")
     else:
-        for task in tasks:
+        for i, task in enumerate(tasks):
             result = build_quarter_wrapper(task)
             results.append(result)
+            status = result.get('status', '?')
+            qname = result.get('quarter', '?')
+            info = f"{result.get('records', 0)}条" if status == 'success' else status
+            print(f"[进度 {i+1}/{total}] {qname}: {info}")
     
     # 打印汇总
     print("\n" + "=" * 60)

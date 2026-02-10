@@ -43,13 +43,14 @@ from typing import Dict, List, Tuple, Optional, Any
 logger = logging.getLogger(__name__)
 
 
-def compute_market_features(data_source, date: str) -> Optional[Dict[str, Any]]:
+def compute_market_features(data_source, date: str, index_code: str = '000300') -> Optional[Dict[str, Any]]:
     """
     计算市场环境特征
     
     Args:
         data_source: DataManager 实例
         date: 日期 (YYYY-MM-DD)
+        index_code: 指数代码，'000300'=沪深300（默认），'000905'=中证500
         
     Returns:
         市场特征字典，包含:
@@ -61,11 +62,11 @@ def compute_market_features(data_source, date: str) -> Optional[Dict[str, Any]]:
     from datetime import datetime, timedelta
     
     try:
-        # 获取沪深300指数日线数据（取120天确保够用）
+        # 获取指数日线数据（取120天确保够用）
         end_date = date
         start_date = (datetime.strptime(date, '%Y-%m-%d') - timedelta(days=180)).strftime('%Y-%m-%d')
         
-        index_daily = data_source.get_index_daily('000300', start_date, end_date)
+        index_daily = data_source.get_index_daily(index_code, start_date, end_date)
         
         if not index_daily or len(index_daily) < 60:
             logger.warning(f"指数数据不足: {len(index_daily) if index_daily else 0} 条")
@@ -273,7 +274,7 @@ def _calc_trend(closes: List[float], period: int) -> int:
 
 
 # 兼容旧版调用（可能有些地方直接调用这些函数）
-def calc_volume_ratio(data_source, date: str, short_period: int = 5, long_period: int = 20) -> float:
+def calc_volume_ratio(data_source, date: str, short_period: int = 5, long_period: int = 20, index_code: str = '000300') -> float:
     """计算成交量比率（短期/长期）"""
     from datetime import datetime, timedelta
     
@@ -281,7 +282,7 @@ def calc_volume_ratio(data_source, date: str, short_period: int = 5, long_period
         end_date = date
         start_date = (datetime.strptime(date, '%Y-%m-%d') - timedelta(days=60)).strftime('%Y-%m-%d')
         
-        index_daily = data_source.get_index_daily('000300', start_date, end_date)
+        index_daily = data_source.get_index_daily(index_code, start_date, end_date)
         
         if not index_daily or len(index_daily) < long_period:
             return 1.0
@@ -301,7 +302,7 @@ def calc_volume_ratio(data_source, date: str, short_period: int = 5, long_period
         return 1.0
 
 
-def calc_recent_max_drawdown(data_source, date: str, period: int = 20) -> float:
+def calc_recent_max_drawdown(data_source, date: str, period: int = 20, index_code: str = '000300') -> float:
     """计算最近N天的最大回撤 (%)"""
     from datetime import datetime, timedelta
     
@@ -309,7 +310,7 @@ def calc_recent_max_drawdown(data_source, date: str, period: int = 20) -> float:
         end_date = date
         start_date = (datetime.strptime(date, '%Y-%m-%d') - timedelta(days=60)).strftime('%Y-%m-%d')
         
-        index_daily = data_source.get_index_daily('000300', start_date, end_date)
+        index_daily = data_source.get_index_daily(index_code, start_date, end_date)
         
         if not index_daily or len(index_daily) < period:
             return 0.0

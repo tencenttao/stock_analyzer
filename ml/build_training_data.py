@@ -56,13 +56,14 @@ def build_training_dataset(
     output_path: Optional[str] = None,
     feature_config: Optional[FeatureConfig] = None,
     use_cache: bool = False,
+    index_code: str = '000300',
 ) -> List[Dict]:
     """
     在给定日期范围内，按月构建训练样本：买入日特征 + 实际收益 + 持仓天数。
 
     流程：
     1. 获取区间内每月第一个交易日（买入日/卖出日）
-    2. 对每月：取沪深300成分股，对每只股票取买入日 StockData，若配置需要日线则取日线
+    2. 对每月：取指数成分股，对每只股票取买入日 StockData，若配置需要日线则取日线
     3. 用 FeatureEngineer.extract(stock, daily_data) 得到特征字典
     4. 用卖出日价格算收益率，记录持仓天数
     5. 每条样本包含：features（含 code/name/buy_date/sell_date/buy_price/sell_price + 配置特征）、return_pct、holding_days
@@ -72,6 +73,7 @@ def build_training_dataset(
         end_date: 结束日期（含）
         output_path: 输出 JSON 路径，为 None 则不写文件
         feature_config: 特征配置，为 None 时使用 DEFAULT_FEATURE_CONFIG
+        index_code: 指数代码，'000300'=沪深300（默认），'000905'=中证500
 
     Returns:
         训练数据列表，每项为 {"features": dict, "return_pct": float, "holding_days": int}
@@ -89,7 +91,9 @@ def build_training_dataset(
     )
     need_market = bool(getattr(config, 'market_features', []))
 
+    index_name = {'000300': '沪深300', '000905': '中证500'}.get(index_code, index_code)
     logger.info(f"开始构建训练数据: {start_date} ~ {end_date}")
+    logger.info(f"指数: {index_name} ({index_code})")
     logger.info(f"特征配置: {engineer.get_feature_names()}")
     logger.info(f"需要日线数据: {'是' if need_daily else '否'}")
     logger.info(f"需要市场/相对特征: {'是' if need_market else '否'}")
@@ -110,23 +114,24 @@ def build_training_dataset(
 
         # 获取指数收益（用于相对收益标签）
         try:
-            index_return_pct = data_source.get_index_return('000300', buy_date, sell_date)
-        except Exception:
+            index_return_pct = data_source.get_index_return(index_code, buy_date, sell_date)
+        except Exception as e:
+            logger.warning(f"  获取指数收益失败({buy_date}~{sell_date}): {e}，设为0")
             index_return_pct = 0
-        logger.info(f"  沪深300收益: {index_return_pct:.2f}%")
+        logger.info(f"  {index_name}收益: {index_return_pct:.2f}%")
 
         # 市场环境特征（月度一次）
         market_data_base = None
         index_daily_for_relation = None
         if need_market:
-            market_data_base = compute_market_features(data_source, buy_date)
+            market_data_base = compute_market_features(data_source, buy_date, index_code=index_code)
             logger.info(f"  市场特征: 20d动量={market_data_base.get('market_momentum_20d', 0):.1f}%, 趋势={market_data_base.get('market_trend', 0)}")
             # 指数日线用于个股-大盘相关系数/Beta（与日线区间一致）
             start_date_120 = (datetime.strptime(buy_date, '%Y-%m-%d') - timedelta(days=120)).strftime('%Y-%m-%d')
-            index_daily_for_relation = data_source.get_index_daily('000300', start_date_120, buy_date)
+            index_daily_for_relation = data_source.get_index_daily(index_code, start_date_120, buy_date)
 
         try:
-            constituents = data_source.get_csi300_stocks(buy_date)
+            constituents = data_source.get_index_constituents(index_code, buy_date)
         except Exception as e:
             logger.error(f"  获取成分股失败: {e}")
             continue
@@ -155,6 +160,9 @@ def build_training_dataset(
                 daily_data = None
                 if need_daily or need_market:
                     daily_data = data_source.get_daily_data(code, end_date=buy_date, days=120)
+                    if daily_data is None:
+                        logger.debug(f"  {code} 日线数据获取失败，跳过")
+                        continue
 
                 market_data = None
                 if need_market and market_data_base is not None:
@@ -275,6 +283,8 @@ if __name__ == '__main__':
                         help='特征配置: default=基础+动量, full=含日线技术指标')
     parser.add_argument('--use-cache', action='store_true',
                         help='使用缓存数据（可加速，但可能使用旧数据）')
+    parser.add_argument('--index', default='000300', choices=['000300', '000905'],
+                        help='指数代码: 000300=沪深300(默认), 000905=中证500')
     parser.add_argument('--debug', action='store_true', help='开启 DEBUG 日志')
     args = parser.parse_args()
 
@@ -283,9 +293,11 @@ if __name__ == '__main__':
 
     config = FULL_FEATURE_CONFIG if args.config == 'full' else DEFAULT_FEATURE_CONFIG
 
+    index_name = {'000300': '沪深300', '000905': '中证500'}.get(args.index, args.index)
     print("=" * 60)
     print("构建机器学习训练数据集")
     print("=" * 60)
+    print(f"指数: {index_name} ({args.index})")
     print(f"日期: {args.start} ~ {args.end}")
     print(f"特征配置: {args.config}")
     print(f"使用缓存: {'是' if args.use_cache else '否'}")
@@ -298,6 +310,7 @@ if __name__ == '__main__':
         output_path=args.output,
         feature_config=config,
         use_cache=args.use_cache,
+        index_code=args.index,
     )
 
     if training_data:

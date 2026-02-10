@@ -56,10 +56,13 @@ def _create_from_preset(config):
 MODEL_REGISTRY = {
     'random_forest': RandomForestModel,
     'rf_regressor': RandomForestRegressorModel,
-    'hgb_regressor': HGBRegressorModel,  # 推荐：最优模型
-    'hgb': HGBRegressorModel,            # 别名
-    'hgb_shallow': HGBRegressorModel,    # 别名
-    'hgb_deep': HGBRegressorModel,       # 别名
+    'rf': RandomForestRegressorModel,       # 别名
+    'rf_100': RandomForestRegressorModel,   # 别名
+    'rf_200': RandomForestRegressorModel,   # 别名
+    'hgb_regressor': HGBRegressorModel,     # 推荐：最优模型
+    'hgb': HGBRegressorModel,               # 别名
+    'hgb_shallow': HGBRegressorModel,       # 别名
+    'hgb_deep': HGBRegressorModel,          # 别名
     'random': RandomBaselineModel,
 }
 

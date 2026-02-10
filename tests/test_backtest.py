@@ -174,15 +174,12 @@ def test_monthly_mode_config():
         end_date='2024-06-30',
         initial_capital=100000,
         top_n=10,
-        sample_size=50
     )
     
     assert config.start_date == '2024-01-01'
     assert config.top_n == 10
-    assert config.sample_size == 50
     
     print(f"  ✓ 月度配置创建成功")
-    print(f"    采样数量: {config.sample_size}")
     print(f"    随机种子: {config.random_seed}")
     
     return True
@@ -312,7 +309,6 @@ def test_backtest_engine_with_mock():
         end_date='2024-03-31',  # 3个月
         initial_capital=100000,
         top_n=5,
-        sample_size=15,
         enable_cost=True
     )
     
@@ -376,17 +372,15 @@ def test_backtest_engine_with_real_data():
             end_date='2025-01-02',
             initial_capital=100000,       # 10万初始资金
             top_n=10,                      # 每月选10只股票
-            sample_size=300,               # 使用全部沪深300成分股
-            benchmark='000300',           # 基准指数
-            enable_cost=False,             # 启用交易成本（与 backtest.py 一致）
-            random_seed=42                # 固定随机种子，结果可重复
+            benchmark='000300',           # 基准指数（候选池=全部成分股）
+            enable_cost=False,
+            random_seed=42
         )
         
         print(f"   • 回测期: {config.start_date} ~ {config.end_date}")
         print(f"   • 初始资金: ¥{config.initial_capital:,.0f}")
         print(f"   • 每月选股: {config.top_n} 只")
-        print(f"   • 采样数量: {config.sample_size} 只")
-        print(f"   • 选股范围: {config.benchmark} 成分股")
+        print(f"   • 选股范围: {config.benchmark} 全部成分股")
         print(f"   • 交易成本: {'启用' if config.enable_cost else '禁用'}")
         
         # ===== 2. 初始化数据管理器 =====

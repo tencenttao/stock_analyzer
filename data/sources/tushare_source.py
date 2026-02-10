@@ -242,6 +242,7 @@ class TushareSource(DataSource):
             if fin_data:
                 stock.roe = fin_data.get('roe')
                 stock.profit_growth = fin_data.get('profit_growth')
+                stock.revenue_growth = fin_data.get('revenue_growth')
                 stock.report_date = fin_data.get('report_date')
             
             # 计算PEG
@@ -441,7 +442,7 @@ class TushareSource(DataSource):
                 ts_code=ts_code,
                 start_date=start_date,
                 end_date=end_date,
-                fields='ts_code,ann_date,end_date,roe,netprofit_yoy'
+                fields='ts_code,ann_date,end_date,roe,netprofit_yoy,or_yoy'
             )
             
             if df is None or df.empty:
@@ -461,6 +462,7 @@ class TushareSource(DataSource):
             return {
                 'roe': row.get('roe'),
                 'profit_growth': row.get('netprofit_yoy'),
+                'revenue_growth': row.get('or_yoy'),
                 'report_date': row.get('end_date')
             }
             
@@ -494,54 +496,80 @@ class TushareSource(DataSource):
             return []
     
     def get_index_constituents(self, index_code: str, date: str = None) -> List[str]:
-        """获取指数成分股"""
+        """获取指数成分股
+        
+        查询策略：
+        1. 先精确匹配指定日期
+        2. 如果精确匹配无数据，向前搜索最近 60 天内最近的可用数据
+        3. 仍然无数据则报错退出（不会静默回退到当前日期）
+        
+        Tushare index_weight 只在特定日期（通常是月末交易日）发布数据，
+        因此对月初日期的查询需要回退到前一个月末的数据。
+        """
         cache_key = f"index_{index_code}_{date or 'latest'}"
         if cache_key in self._cache:
             return self._cache[cache_key]
         
-        try:
-            self._rate_limit()
+        self._rate_limit()
+        
+        # 转换指数代码
+        if index_code == '000300':
+            ts_index_code = '399300.SZ'
+        elif index_code == '000905':
+            ts_index_code = '000905.SH'
+        else:
+            ts_index_code = f"{index_code}.SH"
+        
+        trade_date = date.replace('-', '') if date else datetime.now().strftime('%Y%m%d')
+        
+        # 1. 先尝试精确日期查询
+        df = self._pro.index_weight(
+            index_code=ts_index_code,
+            start_date=trade_date,
+            end_date=trade_date
+        )
+        
+        # 2. 精确匹配无数据时，向前搜索最近 60 天
+        if df is None or df.empty:
+            dt = datetime.strptime(trade_date, '%Y%m%d')
+            range_start = (dt - timedelta(days=60)).strftime('%Y%m%d')
+            range_end = trade_date
             
-            # 转换指数代码
-            if index_code == '000300':
-                ts_index_code = '399300.SZ'
-            elif index_code == '000905':
-                ts_index_code = '000905.SH'
-            else:
-                ts_index_code = f"{index_code}.SH"
-            
-            trade_date = date.replace('-', '') if date else datetime.now().strftime('%Y%m%d')
-            
-            df = self._pro.index_weight(
-                index_code=ts_index_code,
-                start_date=trade_date,
-                end_date=trade_date
+            logger.info(
+                f"{index_code} 在 {date} 无精确成分股数据，"
+                f"向前搜索 {range_start}~{range_end}"
             )
             
-            if df is None or df.empty:
-                # 获取最近的成分股
-                df = self._pro.index_weight(
-                    index_code=ts_index_code,
-                    start_date=(datetime.now() - timedelta(days=30)).strftime('%Y%m%d'),
-                    end_date=datetime.now().strftime('%Y%m%d')
-                )
-            
-            if df is None or df.empty:
-                return []
-            
-            # 取最新日期的数据
-            latest_date = df['trade_date'].max()
-            df = df[df['trade_date'] == latest_date]
-            
-            result = [self._from_ts_code(code) for code in df['con_code'].tolist()]
-            self._cache[cache_key] = result
-            
+            self._rate_limit()
+            df = self._pro.index_weight(
+                index_code=ts_index_code,
+                start_date=range_start,
+                end_date=range_end
+            )
+        
+        # 3. 仍然无数据则报错
+        if df is None or df.empty:
+            raise ValueError(
+                f"无法获取 {index_code} 在 {date} 及前60天的成分股数据"
+                f"（Tushare index_weight 返回空）。"
+                f"请检查 Tushare 权限或日期是否有效。"
+            )
+        
+        # 取最近日期的数据（离查询日期最近的）
+        latest_date = df['trade_date'].max()
+        df = df[df['trade_date'] == latest_date]
+        
+        result = [self._from_ts_code(code) for code in df['con_code'].tolist()]
+        self._cache[cache_key] = result
+        
+        if latest_date != trade_date:
+            logger.info(
+                f"获取{index_code}成分股 {len(result)} 只 "
+                f"(查询: {trade_date}, 实际数据日期: {latest_date})"
+            )
+        else:
             logger.info(f"获取{index_code}成分股 {len(result)} 只 (日期: {latest_date})")
-            return result
-            
-        except Exception as e:
-            logger.error(f"获取指数成分股失败: {e}")
-            return []
+        return result
     
     def get_index_data(self, index_code: str, start_date: str, end_date: str) -> Optional[IndexData]:
         """获取指数表现数据"""
@@ -633,8 +661,10 @@ class TushareSource(DataSource):
             )
             
             if df is None or df.empty:
-                # 回退到默认实现
-                return super().get_trading_calendar(start_date, end_date)
+                raise ValueError(
+                    f"无法获取交易日历 {start_date}~{end_date}（Tushare trade_cal 返回空）。"
+                    f"请检查 Tushare 权限或日期范围是否有效。"
+                )
             
             df = df.sort_values('cal_date')
             result = [
@@ -644,9 +674,11 @@ class TushareSource(DataSource):
             
             return result
             
+        except ValueError:
+            raise  # 数据缺失错误直接抛出
         except Exception as e:
-            logger.warning(f"获取交易日历失败，使用默认: {e}")
-            return super().get_trading_calendar(start_date, end_date)
+            logger.warning(f"获取交易日历失败: {e}")
+            raise RuntimeError(f"获取交易日历失败: {e}")
     
     def batch_get_stock_data(self, codes: List[str], date: str) -> List[StockData]:
         """批量获取股票数据（优化版）"""
@@ -836,6 +868,7 @@ class TushareSource(DataSource):
                 'report_date': result.get('report_date'),
                 'roe': result.get('roe'),
                 'profit_growth': result.get('profit_growth'),
+                'revenue_growth': result.get('revenue_growth'),
             }
         return None
     

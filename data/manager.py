@@ -257,7 +257,10 @@ class DataManager(DataSource):
     
     def get_csi500_stocks(self, date: str = None) -> List[str]:
         """
-        获取中证500成分股
+        获取中证500成分股（便捷方法）
+
+        与 get_csi300_stocks 一致，不走文件缓存（成分股随调仓日变化，
+        且 TushareSource 内部有进程级内存缓存）。
         
         Args:
             date: 可选日期
@@ -265,19 +268,7 @@ class DataManager(DataSource):
         Returns:
             成分股代码列表
         """
-        cache_key = f"csi500_{date or 'latest'}"
-        
-        if self._cache and self._read_cache:
-            cached = self._cache.get(cache_key)
-            if cached:
-                return cached
-        
-        stocks = self._source.get_index_constituents('000905', date)
-        
-        if stocks and self._cache and self._write_cache:
-            self._cache.set(cache_key, stocks)
-        
-        return stocks
+        return self.get_index_constituents('000905', date)
     
     def get_index_data(self, index_code: str, start_date: str, end_date: str = None) -> Optional[IndexData]:
         """
@@ -312,6 +303,9 @@ class DataManager(DataSource):
         """
         DataSource接口：获取指数区间收益率
         
+        注意：不使用文件缓存。该接口调用量小（每月1次），
+        但缓存容易出错（API失败时会缓存0.0污染后续计算）。
+        
         Args:
             index_code: 指数代码
             start_date: 开始日期
@@ -320,21 +314,14 @@ class DataManager(DataSource):
         Returns:
             收益率 (%)
         """
-        cache_key = f"index_return_{index_code}_{start_date}_{end_date}"
-        
-        if self._cache and self._read_cache:
-            cached = self._cache.get(cache_key)
-            if cached is not None:
-                return cached
-        
-        # 通过 get_index_data 获取收益率
+        # 通过 get_index_data 获取收益率（不缓存，每次实时计算）
         index_data = self._source.get_index_data(index_code, start_date, end_date)
-        ret = index_data.return_pct if index_data else 0.0
         
-        if ret is not None and self._cache and self._write_cache:
-            self._cache.set(cache_key, ret)
+        if index_data is None:
+            logger.warning(f"获取指数收益率失败: {index_code} {start_date}~{end_date}")
+            return 0.0
         
-        return ret
+        return index_data.return_pct if index_data.return_pct is not None else 0.0
 
     def get_index_daily(
         self, index_code: str, start_date: str, end_date: str

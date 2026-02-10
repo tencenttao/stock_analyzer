@@ -4,27 +4,36 @@
 
 默认配置:
     - 特征: full（来自 ml.features.get_full_numeric_feature_names，与 optimizer 一致）
-    - 模型: hgb_deep（来自 ml.models.REGRESSOR_PRESETS）
+    - 模型: rf_200（来自 ml.models.REGRESSOR_PRESETS）
+    - 指数: 沪深300（000300）
     - 上涨阈值: 3%
 
+模型文件命名: {index_tag}_{model_name}_{year}q{quarter}.pkl
+    例: csi300_rf200_2025q4.pkl / csi500_hgb_shallow_2025q4.pkl
+
 使用示例:
-    # 使用默认配置（与 selector/optimizer 一致）
-    python ml/train.py
+    # 使用默认配置训练季度模型（full + rf_200 + 沪深300）
+    python ml/train.py --train-quarterly
     
-    # 指定训练/测试数据
+    # 指定数据目录和输出目录
+    python ml/train.py --train-quarterly --quarterly-data data/quarterly_data_v2 --output-dir models
+    python ml/train.py --train-quarterly --start-year 2012 --end-year 2025 --window-quarters 8
+    
+    # 使用 HGB 模型
+    python ml/train.py --train-quarterly --model hgb_shallow
+    
+    # 中证500模型
+    python ml/train.py --train-quarterly --index 000905 --quarterly-data data/quarterly_data_csi500
+    
+    # 单次训练（指定训练/测试数据）
     python ml/train.py --data data/train_data --test-data data/test_data
     
     # 保存模型，用于 backtest.py
     python ml/train.py --save-model models/predictor.pkl
     
-    # 季度模型：2012～2025 每季用前 8 季数据训练，保存为 predictor_2025q4 等
-    python ml/train.py --train-quarterly
-    python ml/train.py --train-quarterly --quarterly-data data/quarterly_data --output-dir models
-    python ml/train.py --train-quarterly --start-year 2012 --end-year 2025 --window-quarters 8
-    
     # 切换特征组: base, momentum, full(默认)
     python ml/train.py --feature-set base
-    # 切换模型: hgb_shallow, hgb_medium, hgb_deep(默认)
+    # 切换模型: hgb_shallow, hgb_medium, hgb_deep, rf_100, rf_200(默认)
     python ml/train.py --model hgb_shallow
 """
 
@@ -79,8 +88,8 @@ FEATURE_SETS = {
 }
 
 
-# 季度训练模式：数据目录
-DATA_DIR_QUARTERLY = './data/quarterly_data'
+# 季度训练模式：数据目录（使用 v2 版本，含正确 revenue_growth、历史成分股）
+DATA_DIR_QUARTERLY = './data/quarterly_data_v2'
 
 
 def load_quarterly_data(data_dir: str = None):
@@ -278,18 +287,24 @@ def train_quarterly_models(
     end_year: int = 2025,
     window_quarters: int = 8,
     feature_set: str = 'full',
-    model_name: str = 'hgb_shallow',
+    model_name: str = 'rf_200',
+    index_code: str = '000300',
 ):
     """
-    按季度滑动窗口训练并保存模型：对 2012～2025 每个季度，用前 8 个季度数据训练，保存为 predictor_YYYYqN.pkl。
-    数据来自 data_dir（quarterly_data），文件名格式 2020_Q1_ml_training_data.json。
+    按季度滑动窗口训练并保存模型。
+
+    文件命名: {index_tag}_{model_name}_{year}q{quarter}.pkl
+    例如: csi300_rf200_2025q4.pkl / csi500_hgb_shallow_2025q4.pkl
+
+    数据来自 data_dir（quarterly_data_v2），文件名格式 2020_Q1_ml_training_data.json。
     """
     from ml.models import create_model, REGRESSOR_PRESETS
     import pickle
 
-    MODEL_CONFIGS = {k: v for k, v in REGRESSOR_PRESETS.items() if v.get('model') == 'hgb'}
+    MODEL_CONFIGS = dict(REGRESSOR_PRESETS)
     model_config = MODEL_CONFIGS.get(model_name, MODEL_CONFIGS['hgb_shallow'])
-    model = create_model(model_config)
+    index_tag = {'000300': 'csi300', '000905': 'csi500'}.get(index_code, index_code)
+    model_tag = model_name  # e.g. rf_200, hgb_shallow
 
     logger.info("加载季度数据: %s", data_dir)
     quarterly_data = load_quarterly_data(data_dir)
@@ -336,7 +351,7 @@ def train_quarterly_models(
             model = create_model(model_config)
             model.fit(X_train, y_train)
 
-            out_name = f"predictor_{year}q{quarter}.pkl"
+            out_name = f"{index_tag}_{model_tag}_{year}q{quarter}.pkl"
             out_path = os.path.join(output_dir, out_name)
             kind = model_config.get('model', 'hgb')
             model_type = 'hgb_regressor' if kind == 'hgb' else 'rf_regressor'
@@ -362,8 +377,8 @@ def train_quarterly_models(
 def main():
     from ml.models import create_model, REGRESSOR_PRESETS
 
-    # 仅 HGB 预设供 train 使用（与 quarterly_selector 一致）
-    MODEL_CONFIGS = {k: v for k, v in REGRESSOR_PRESETS.items() if v.get('model') == 'hgb'}
+    # 全部预设（HGB + RF）
+    MODEL_CONFIGS = dict(REGRESSOR_PRESETS)
 
     parser = argparse.ArgumentParser(description='训练股票预测模型（与 quarterly_selector/strategy_optimizer 逻辑一致）')
     # 数据路径
@@ -374,7 +389,7 @@ def main():
     # 季度训练模式：基于 quarterly_data 按季度滑动窗口训练并保存 predictor_YYYYqN.pkl
     parser.add_argument('--train-quarterly', action='store_true',
                         help='按季度训练：用前8季数据训练 2012～2025 每季模型，保存到 --output-dir')
-    parser.add_argument('--quarterly-data', default='./data/quarterly_data',
+    parser.add_argument('--quarterly-data', default='./data/quarterly_data_v2',
                         help='季度数据目录（仅 --train-quarterly 时生效）')
     parser.add_argument('--output-dir', default='./models',
                         help='季度模型保存目录（仅 --train-quarterly 时生效）')
@@ -388,8 +403,11 @@ def main():
     parser.add_argument('--feature-set', choices=['base', 'momentum', 'full'], default='full',
                         help='特征组: base, momentum, full(默认)')
     # 模型配置（与 strategy_optimizer 一致，来自 REGRESSOR_PRESETS）
-    parser.add_argument('--model', choices=list(MODEL_CONFIGS.keys()), default='hgb_shallow',
-                        help='模型预设: hgb_shallow, hgb_medium, hgb_deep(默认)')
+    parser.add_argument('--model', choices=list(MODEL_CONFIGS.keys()), default='rf_200',
+                        help='模型预设: hgb_shallow, hgb_medium, hgb_deep, rf_100, rf_200(默认)')
+    # 指数代码（用于模型命名）
+    parser.add_argument('--index', default='000300', choices=['000300', '000905'],
+                        help='指数代码: 000300=沪深300(默认), 000905=中证500')
     # 评估配置（仅在使用 --test-data 时生效）
     parser.add_argument('--threshold-up', type=float, default=3.0, help='上涨阈值%%(默认3.0)')
     # 保存模型
@@ -410,6 +428,7 @@ def main():
             window_quarters=args.window_quarters,
             feature_set=args.feature_set,
             model_name=args.model,
+            index_code=args.index,
         )
         print("=" * 60)
         return

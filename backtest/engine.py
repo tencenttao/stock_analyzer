@@ -42,9 +42,8 @@ class BacktestConfig:
     initial_capital: float = field(default_factory=lambda: BACKTEST_DEFAULTS['initial_capital'])
     benchmark: str = field(default_factory=lambda: BACKTEST_DEFAULTS['benchmark'])
     
-    # 选股配置
+    # 选股配置（候选池=基准指数全部成分股，不采样）
     top_n: int = field(default_factory=lambda: BACKTEST_DEFAULTS['top_n'])
-    sample_size: int = field(default_factory=lambda: BACKTEST_DEFAULTS.get('sample_size', 300))
     random_seed: int = field(default_factory=lambda: BACKTEST_DEFAULTS.get('random_seed', 42))
     
     # 交易成本配置
@@ -165,7 +164,6 @@ class BacktestEngine:
             end_date=self.config.end_date,
             initial_capital=self.config.initial_capital,
             top_n=self.config.top_n,
-            sample_size=self.config.sample_size,
             random_seed=self.config.random_seed,
             benchmark=self.config.benchmark
         )
@@ -255,7 +253,6 @@ class BacktestEngine:
             config={
                 'strategy': self.strategy.name,
                 'top_n': self.config.top_n,
-                'sample_size': self.config.sample_size,
                 'enable_cost': self.config.enable_cost,
                 'commission_rate': self.config.commission_rate,
                 'benchmark': self.config.benchmark

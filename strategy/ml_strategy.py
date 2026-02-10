@@ -81,6 +81,9 @@ class MLStrategy(Strategy):
         # 数据源（用于获取日线数据）
         self._data_source = data_source
         
+        # 指数代码（影响市场特征和 correlation/beta 的基准，默认沪深300）
+        self._index_code = merged_config.get('index_code', '000300')
+        
         # 延迟加载模型
         self._predictor = None
         self._feature_engineer = None
@@ -182,7 +185,7 @@ class MLStrategy(Strategy):
             return None
         try:
             from ml.features.market import compute_market_features
-            return compute_market_features(self._data_source, date)
+            return compute_market_features(self._data_source, date, index_code=self._index_code)
         except Exception as e:
             logger.warning(f"[ML策略] 计算市场特征失败: {e}")
             return None
@@ -336,7 +339,7 @@ class MLStrategy(Strategy):
                 if market_data_base:
                     from datetime import datetime, timedelta
                     start_120 = (datetime.strptime(ref_date, '%Y-%m-%d') - timedelta(days=120)).strftime('%Y-%m-%d')
-                    index_daily_for_relation = self._data_source.get_index_daily('000300', start_120, ref_date)
+                    index_daily_for_relation = self._data_source.get_index_daily(self._index_code, start_120, ref_date)
                     logger.info(f"[ML策略] 市场特征: 20d动量={market_data_base.get('market_momentum_20d', 0):.1f}%, 趋势={market_data_base.get('market_trend', 0)}")
             if not market_data_base:
                 logger.warning("[ML策略] 未获取到市场特征，市场/相对特征将使用默认值")
@@ -347,10 +350,14 @@ class MLStrategy(Strategy):
         
         features_list = []
         if need_any_daily and self._data_source:
+            skipped_daily = 0
             for i, s in enumerate(filtered):
                 if (i + 1) % 100 == 0 or i + 1 == len(filtered):
                     logger.info(f"[ML策略]   进度: {i+1}/{len(filtered)}")
                 daily_data = self._data_source.get_daily_data(s.code, end_date=getattr(s, 'date', None), days=120)
+                if daily_data is None:
+                    skipped_daily += 1
+                    continue
                 market_data = None
                 if self._need_market_data and market_data_base is not None:
                     market_data = dict(market_data_base)
@@ -360,6 +367,8 @@ class MLStrategy(Strategy):
                         market_data['stock_beta_20d'] = beta
                 features = self._extract_features(s, daily_data=daily_data, market_data=market_data)
                 features_list.append(features)
+            if skipped_daily > 0:
+                logger.warning(f"[ML策略] {skipped_daily} 只股票因日线数据获取失败被跳过")
         else:
             if need_any_daily and not self._data_source:
                 logger.warning("[ML策略] 需要日线/市场数据但未设置数据源，相关特征将使用默认值")
