@@ -114,6 +114,10 @@ class DataManager(DataSource):
             cache_mode.append('写')
         cache_str = '+'.join(cache_mode) if cache_mode else '禁用'
         logger.info(f"数据管理器初始化: 数据源={source}, 缓存={cache_str}")
+        # 交易日历缓存：{(start, end): [trading_days_list]}
+        self._trading_cal_cache: Dict[tuple, List[str]] = {}
+        # 日期解析缓存：{requested_date: resolved_trading_date}
+        self._resolved_dates: Dict[str, str] = {}
     
     def _create_source(self, source_name: str, **kwargs) -> DataSource:
         """创建数据源实例"""
@@ -148,36 +152,133 @@ class DataManager(DataSource):
         self._source_name = source
         logger.info(f"数据源已切换为: {source}")
     
+    def _resolve_trading_date(self, date: str) -> str:
+        """
+        将请求日期解析为最近的实际交易日。
+        
+        流程：
+        1. 校验格式、是否未来日期
+        2. 通过 Tushare 交易日历判断是否交易日（含节假日）
+        3. 若非交易日，向前搜索最近的交易日
+        4. 打一次日志告知用户
+        5. 缓存结果，同一日期不重复解析
+        
+        Args:
+            date: 请求日期 (YYYY-MM-DD)
+            
+        Returns:
+            实际交易日 (YYYY-MM-DD)
+        """
+        # 已解析过，直接返回
+        if date in self._resolved_dates:
+            return self._resolved_dates[date]
+        
+        from datetime import datetime as _dt, date as _date_cls, timedelta as _td
+        
+        # 1. 格式校验
+        try:
+            d = _dt.strptime(date, '%Y-%m-%d').date()
+        except ValueError:
+            raise ValueError(f"日期格式异常: '{date}'，应为 YYYY-MM-DD")
+        
+        # 2. 未来日期校验
+        today = _date_cls.today()
+        if d > today:
+            raise ValueError(
+                f"请求日期 {date} 是未来日期（今天 {today}），无法获取行情数据"
+            )
+        
+        # 3. 通过交易日历查找实际交易日
+        #    向前搜索最多 30 天（覆盖春节、国庆等长假）
+        search_start = d - _td(days=30)
+        cal_key = (search_start.strftime('%Y-%m-%d'), date)
+        
+        if cal_key not in self._trading_cal_cache:
+            try:
+                cal = self._source.get_trading_calendar(
+                    cal_key[0], cal_key[1]
+                )
+                self._trading_cal_cache[cal_key] = cal
+            except Exception as e:
+                logger.warning(f"获取交易日历失败: {e}，回退到简单周末判断")
+                # 回退：只排除周末
+                cal = []
+                cur = search_start
+                while cur <= d:
+                    if cur.weekday() < 5:
+                        cal.append(cur.strftime('%Y-%m-%d'))
+                    cur += _td(days=1)
+                self._trading_cal_cache[cal_key] = cal
+        
+        trading_days = self._trading_cal_cache[cal_key]
+        
+        if not trading_days:
+            raise ValueError(
+                f"在 {search_start} ~ {date} 范围内未找到任何交易日，请检查日期是否合理"
+            )
+        
+        # 找到 <= date 的最近交易日
+        resolved = trading_days[-1]  # 已排序，最后一个 <= date
+        for td in reversed(trading_days):
+            if td <= date:
+                resolved = td
+                break
+        
+        # 4. 打日志（只打一次）
+        weekday_names = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+        if resolved != date:
+            wd = d.weekday()
+            reason = f"{weekday_names[wd]}" if wd >= 5 else "节假日"
+            logger.warning(
+                f"请求日期 {date} 是{reason}（非交易日），"
+                f"自动调整为最近交易日: {resolved}"
+            )
+        else:
+            logger.debug(f"请求日期 {date} 是交易日")
+        
+        # 5. 缓存解析结果
+        self._resolved_dates[date] = resolved
+        return resolved
+    
     def get_stock_data(self, code: str, date: str) -> Optional[StockData]:
         """
         获取股票数据
         
+        流程：
+        1. 将请求日期解析为实际交易日（通过交易日历，含节假日判断）
+        2. 用实际交易日读缓存
+        3. 缓存未命中则从数据源获取
+        4. 用实际交易日写缓存
+        
         Args:
             code: 股票代码
-            date: 日期
+            date: 日期（YYYY-MM-DD），可以是非交易日，会自动解析
             
         Returns:
             StockData对象
         """
-        logger.debug(f"[get_stock_data] 请求: code={code}, date={date}")
+        # 1. 解析为实际交易日（首次会打日志告知用户）
+        trading_date = self._resolve_trading_date(date)
         
-        # 尝试从缓存获取
-        cache_key = f"stock_{code}_{date}"
+        logger.debug(f"[get_stock_data] 请求: code={code}, date={date} → trading_date={trading_date}")
+        
+        # 2. 用实际交易日读缓存
+        cache_key = f"stock_{code}_{trading_date}"
         if self._cache and self._read_cache:
             cached = self._cache.get(cache_key)
             if cached:
-                logger.debug(f"[get_stock_data] 缓存命中: {code}@{date}")
+                logger.debug(f"[get_stock_data] 缓存命中: {code}@{cache_key}")
                 return StockData.from_dict(cached) if isinstance(cached, dict) else cached
         
-        # 从数据源获取
-        stock = self._source.get_stock_data(code, date)
+        # 3. 从数据源获取（传入实际交易日，避免数据源内部再次退化）
+        stock = self._source.get_stock_data(code, trading_date)
         
-        # 保存到缓存
+        # 4. 用实际交易日写缓存
         if stock and self._cache and self._write_cache:
             self._cache.set(cache_key, stock.to_dict())
-            logger.debug(f"[get_stock_data] 获取成功: {code}@{date}, 价格={stock.price:.2f}")
+            logger.debug(f"[get_stock_data] 获取成功: {code}@{cache_key}, 价格={stock.price:.2f}")
         elif not stock:
-            logger.debug(f"[get_stock_data] 获取失败: {code}@{date}")
+            logger.debug(f"[get_stock_data] 获取失败: {code}@{trading_date}")
         
         return stock
     
@@ -185,20 +286,25 @@ class DataManager(DataSource):
         """
         批量获取股票数据
         
+        流程与 get_stock_data 一致：先解析实际交易日，再统一用它操作缓存和数据源。
+        
         Args:
             codes: 股票代码列表
-            date: 日期
+            date: 日期（可以是非交易日，会自动解析）
             
         Returns:
             StockData列表
         """
-        # 分离缓存命中和未命中的代码
+        # 1. 解析为实际交易日
+        trading_date = self._resolve_trading_date(date)
+        
+        # 2. 分离缓存命中和未命中
         results = []
         missing_codes = []
         
         if self._cache and self._read_cache:
             for code in codes:
-                cache_key = f"stock_{code}_{date}"
+                cache_key = f"stock_{code}_{trading_date}"
                 cached = self._cache.get(cache_key)
                 if cached:
                     stock = StockData.from_dict(cached) if isinstance(cached, dict) else cached
@@ -208,15 +314,15 @@ class DataManager(DataSource):
         else:
             missing_codes = list(codes)
         
-        # 获取未缓存的数据
+        # 3. 从数据源获取未缓存的（传入实际交易日）
         if missing_codes:
             logger.info(f"从数据源获取 {len(missing_codes)} 只股票数据...")
-            new_stocks = self._source.batch_get_stock_data(missing_codes, date)
+            new_stocks = self._source.batch_get_stock_data(missing_codes, trading_date)
             
-            # 保存到缓存
+            # 4. 用实际交易日写缓存
             if self._cache and self._write_cache:
                 for stock in new_stocks:
-                    cache_key = f"stock_{stock.code}_{date}"
+                    cache_key = f"stock_{stock.code}_{trading_date}"
                     self._cache.set(cache_key, stock.to_dict())
             
             results.extend(new_stocks)

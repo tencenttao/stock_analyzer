@@ -257,7 +257,15 @@ class TushareSource(DataSource):
             return stock
             
         except Exception as e:
-            logger.debug(f"获取{code}数据失败: {e}")
+            # 第一次出错用 WARNING（让用户感知到），后续同类错误只 debug
+            err_key = str(type(e).__name__)
+            if not hasattr(self, '_logged_errors'):
+                self._logged_errors = set()
+            if err_key not in self._logged_errors:
+                logger.warning(f"获取{code}数据失败: {e}（同类后续错误将静默）")
+                self._logged_errors.add(err_key)
+            else:
+                logger.debug(f"获取{code}数据失败: {e}")
             return None
     
     def _get_daily_data(self, code: str, date: str, adj: str = 'qfq') -> Optional[Dict]:
@@ -348,7 +356,20 @@ class TushareSource(DataSource):
             
             actual_date = latest['trade_date']
             if actual_date != target_date:
-                logger.debug(f"[_get_daily_data] {code}: 目标日期{date}非交易日, 实际使用{actual_date}")
+                # DataManager 已保证传入的是交易日，若仍不匹配说明数据尚未就绪
+                # 不静默退化，返回 None 避免用旧数据污染缓存
+                actual_fmt = f"{actual_date[:4]}-{actual_date[4:6]}-{actual_date[6:8]}" if len(actual_date) == 8 else actual_date
+                if not hasattr(self, '_daily_data_mismatch_warned'):
+                    self._daily_data_mismatch_warned = set()
+                if date not in self._daily_data_mismatch_warned:
+                    self._daily_data_mismatch_warned.add(date)
+                    logger.warning(
+                        f"[_get_daily_data] {code}: 交易日 {date} 的日线数据不可用"
+                        f"（最近可用: {actual_fmt}），可能数据尚未更新，返回 None"
+                    )
+                else:
+                    logger.debug(f"[_get_daily_data] {code}: 交易日 {date} 数据不可用，最近={actual_fmt}")
+                return None
             
             # 计算动量（使用复权价格，从目标日期开始往前算）
             # 找到目标日期在数据中的位置
@@ -399,18 +420,8 @@ class TushareSource(DataSource):
             )
             
             if df is None or df.empty:
-                # 尝试获取前几天的数据
-                for offset in range(1, 8):
-                    try_date = datetime.strptime(date, '%Y-%m-%d') - timedelta(days=offset)
-                    df = self._pro.daily_basic(
-                        ts_code=ts_code,
-                        trade_date=try_date.strftime('%Y%m%d'),
-                        fields=fields
-                    )
-                    if df is not None and not df.empty:
-                        break
-            
-            if df is None or df.empty:
+                # DataManager 已保证传入交易日，若无数据说明尚未更新，不静默退化
+                logger.debug(f"[_get_daily_basic] {code}: 交易日 {date} 无每日指标数据")
                 return None
             
             row = df.iloc[0]

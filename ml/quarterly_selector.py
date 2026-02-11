@@ -612,15 +612,15 @@ def main():
     parser.add_argument('--top-n', type=int, default=DEFAULT_TOP_K, help=f'选股数量（默认{DEFAULT_TOP_K}）')
     parser.add_argument('--start-year', type=int, default=2021, help='回测起始年份（默认2012，与optimizer一致）')
     parser.add_argument('--end-year', type=int, default=2025, help='回测结束年份（可选，默认到最新）')
-    parser.add_argument('--window-quarters', type=int, default=8,
+    parser.add_argument('--window-quarters', type=int, default=20,
                         help=f'滑动窗口季度数，0=全部历史（默认{DEFAULT_WINDOW_QUARTERS}=2年）')
     parser.add_argument('--features', type=str, choices=list(FEATURE_SETS.keys()), default='full',
                         help='特征组: momentum=动量聚焦, base=估值+质量+动量, full=全特征(默认)')
-    parser.add_argument('--model', type=str, choices=list(MODEL_CONFIGS.keys()), default='rf_200',
+    parser.add_argument('--model', type=str, choices=list(MODEL_CONFIGS.keys()), default='hgb_deep',
                         help='模型配置: hgb_shallow, hgb_medium, hgb_deep(默认)')
     parser.add_argument('--min-threshold', type=float, default=0,
                         help='最小预测阈值(%%)，低于此值不选入（如 2 表示只选预测跑赢基准2%%+的股票）')
-    parser.add_argument('--index', default='000300', choices=['000300', '000905'],
+    parser.add_argument('--index', default='000905', choices=['000300', '000905'],
                         help='指数代码: 000300=沪深300(默认), 000905=中证500')
     args = parser.parse_args()
 

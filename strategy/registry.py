@@ -89,7 +89,7 @@ class StrategyRegistry:
         return cls._strategies[name]
     
     @classmethod
-    def create(cls, name: str, config: Dict = None) -> Strategy:
+    def create(cls, name: str, config: Dict = None, benchmark: Optional[str] = None) -> Strategy:
         """
         创建策略实例
         
@@ -100,6 +100,7 @@ class StrategyRegistry:
         Args:
             name: 策略名称
             config: 策略配置（会与配置文件中的配置合并）
+            benchmark: 基准指数（000300/000905）。ML 策略会据此注入 index_code；未传时用 BACKTEST_CONFIG['benchmark']。
             
         Returns:
             策略实例
@@ -119,6 +120,16 @@ class StrategyRegistry:
             merged_config['filters'] = strategy_config['filters']
         if 'params' in strategy_config:
             merged_config.update(strategy_config['params'])
+        
+        # ML 策略：按 benchmark 注入 index_code（配置中不再写死）
+        if name == 'ml':
+            if benchmark is None:
+                try:
+                    from config.settings import BACKTEST_CONFIG
+                    benchmark = BACKTEST_CONFIG.get('benchmark', '000300')
+                except Exception:
+                    benchmark = '000300'
+            merged_config['index_code'] = benchmark
         
         # 传入的config可以覆盖
         if config:

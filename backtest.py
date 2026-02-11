@@ -51,6 +51,16 @@ from config.strategy_config import DEFAULT_STRATEGY
 from config.data_source_config import DEFAULT_DATA_SOURCE
 
 
+def _normalize_date(date_str: str) -> str:
+    """将日期字符串统一为 YYYY-MM-DD 格式。支持 YYYYMMDD、YYYY-MM-DD。"""
+    if not date_str:
+        return date_str
+    d = date_str.strip().replace('/', '-')
+    if len(d) == 8 and d.isdigit():
+        return f"{d[:4]}-{d[4:6]}-{d[6:8]}"
+    return d
+
+
 def run_backtest(
     start_date: str = None,
     end_date: str = None,
@@ -112,7 +122,7 @@ def run_backtest(
     
     # 初始化
     data_source = DataManager(source=source, use_cache=True)
-    strategy = StrategyRegistry.create(strategy_name)
+    strategy = StrategyRegistry.create(strategy_name, benchmark=benchmark)
     
     # 如果是 ML 策略，需要设置数据源（用于获取日线数据计算技术指标）
     if hasattr(strategy, 'set_data_source'):
@@ -151,15 +161,17 @@ def run_select(
     strategy_name: str = None,
     source: str = None,
     top_n: int = None,
+    benchmark: str = None,
 ):
     """
     执行选股
     
     Args:
-        date: 选股日期，必须指定
+        date: 选股日期，必须指定（支持 YYYY-MM-DD 或 YYYYMMDD 格式）
         strategy_name: 策略名称，默认从配置读取
         source: 数据源，默认从配置读取
         top_n: 选股数量，默认从配置读取
+        benchmark: 基准指数（000300/000905），不传则用 BACKTEST_CONFIG['benchmark']
     
     Returns:
         List[StockData]: 选中的股票列表
@@ -172,6 +184,9 @@ def run_select(
         date = datetime.now().strftime('%Y-%m-%d')
         logger.warning(f"未指定日期，使用今天: {date}")
     
+    # 统一日期格式为 YYYY-MM-DD（兼容 YYYYMMDD）
+    date = _normalize_date(date)
+    
     strategy_name = strategy_name or DEFAULT_STRATEGY
     source = source or DEFAULT_DATA_SOURCE
     top_n = top_n or BACKTEST_CONFIG['top_n']
@@ -179,16 +194,17 @@ def run_select(
     logger.info(f"🔍 选股日期: {date}")
     logger.info(f"📊 策略: {strategy_name}")
     
+    index_code = benchmark or BACKTEST_CONFIG.get('benchmark', '000300')
+    
     # 初始化
     data_source = DataManager(source=source, use_cache=True)
-    strategy = StrategyRegistry.create(strategy_name)
+    strategy = StrategyRegistry.create(strategy_name, benchmark=index_code)
     
     # 如果是 ML 策略，设置数据源
     if hasattr(strategy, 'set_data_source'):
         strategy.set_data_source(data_source)
     
-    # 获取候选股票（使用 BACKTEST_CONFIG 中的 benchmark 指数）
-    index_code = BACKTEST_CONFIG.get('benchmark', '000300')
+    # 获取候选股票（使用 benchmark 指数）
     stock_codes = data_source.get_index_constituents(index_code, date)
     index_name = {'000300': '沪深300', '000905': '中证500'}.get(index_code, index_code)
     logger.info(f"📋 候选股票({index_name}): {len(stock_codes)} 只")
@@ -275,7 +291,7 @@ def run_compare(
             logger.info(f"🎯 执行策略: {name}")
             logger.info(f"{'='*60}")
             
-            strategy = StrategyRegistry.create(name)
+            strategy = StrategyRegistry.create(name, benchmark=config.benchmark)
             # 如果是 ML 策略，设置数据源
             if hasattr(strategy, 'set_data_source'):
                 strategy.set_data_source(data_source)
@@ -343,13 +359,13 @@ def main():
     )
     
     # 回测常用参数（不指定则用 config/settings.py 中的 BACKTEST_CONFIG）
-    parser.add_argument('--start', metavar='DATE', type=str, default='2021-01-01',
+    parser.add_argument('--start', metavar='DATE', type=str, default='2025-10-01',
                         help='回测开始日期 (YYYY-MM-DD)')
     parser.add_argument('--end', metavar='DATE', type=str, default='2026-01-15',
                         help='回测结束日期 (YYYY-MM-DD)')
     parser.add_argument('--top-n', metavar='N', type=int, default=5,
                         help='每月选股数量')
-    parser.add_argument('--benchmark', metavar='CODE', type=str, default='000300',
+    parser.add_argument('--benchmark', metavar='CODE', type=str, default='000905',
                         choices=['000300', '000905'],
                         help='股票候选池/基准指数: 000300=沪深300, 000905=中证500')
     parser.add_argument('--enable-cost', action='store_true',
@@ -381,7 +397,7 @@ def main():
         elif args.compare:
             run_compare()
         elif args.select:
-            run_select(date=args.select, strategy_name=args.strategy)
+            run_select(date=args.select, strategy_name=args.strategy, benchmark=args.benchmark)
         else:
             run_backtest(
                 strategy_name=args.strategy,

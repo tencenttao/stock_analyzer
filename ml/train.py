@@ -25,6 +25,11 @@
     # 中证500模型
     python ml/train.py --train-quarterly --index 000905 --quarterly-data data/quarterly_data_csi500
     
+    # 按指定季度训练（需 window-quarters 个历史季度，不足则报错）
+    python ml/train.py --quarter 2025Q4 --quarterly-data data/quarterly_data_v2 --output-dir models
+    python ml/train.py --quarter 2025Q4 --window-quarters 10
+    # 若只有 9 季数据但指定 --window-quarters 10，会抛出异常
+    
     # 单次训练（指定训练/测试数据）
     python ml/train.py --data data/train_data --test-data data/test_data
     
@@ -280,6 +285,137 @@ def evaluate_precision_by_month(test_data, y_true_binary, prob_up, top_k=10):
     return monthly_results, total_precision
 
 
+def parse_quarter(s: str):
+    """解析季度字符串为 (year, quarter)，如 '2025Q4' -> (2025, 4)。"""
+    s = s.strip().upper()
+    if not s or 'Q' not in s:
+        raise ValueError("无效季度格式: %s，应为 2025Q4 或 2025q4" % s)
+    part = s.split('Q')
+    year = int(part[0])
+    quarter = int(part[1])
+    if quarter not in (1, 2, 3, 4):
+        raise ValueError("无效季度: %d，应为 1～4" % quarter)
+    return year, quarter
+
+
+def _quarter_prev(year: int, quarter: int):
+    """上一季度。"""
+    if quarter > 1:
+        return (year, quarter - 1)
+    return (year - 1, 4)
+
+
+def _quarter_minus(year: int, quarter: int, n: int):
+    """(year, quarter) 往前推 n 个季度。"""
+    y, q = year, quarter
+    for _ in range(n):
+        if q == 1:
+            q, y = 4, y - 1
+        else:
+            q -= 1
+    return (y, q)
+
+
+def _quarters_from_to(y1: int, q1: int, y2: int, q2: int):
+    """从 (y1,q1) 到 (y2,q2) 的连续季度列表（含首尾）。"""
+    out = []
+    y, q = y1, q1
+    while (y, q) <= (y2, q2):
+        out.append((y, q))
+        if q == 4:
+            y, q = y + 1, 1
+        else:
+            q += 1
+    return out
+
+
+def train_single_quarter(
+    year: int,
+    quarter: int,
+    data_dir: str,
+    output_dir: str,
+    window_quarters: int = 8,
+    feature_set: str = 'full',
+    model_name: str = 'rf_200',
+    index_code: str = '000300',
+) -> str:
+    """
+    仅训练指定季度的模型。窗口期 = 从「上一季度」开始往前倒退 window_quarters 个季度；
+    若上一季度或窗口中任一季度不存在于数据中，直接抛异常。
+    保存到 output_dir，命名与批量一致: {index_tag}_{model_tag}_{year}q{quarter}.pkl
+    """
+    from ml.models import create_model, REGRESSOR_PRESETS
+    import pickle
+
+    MODEL_CONFIGS = dict(REGRESSOR_PRESETS)
+    model_config = MODEL_CONFIGS.get(model_name, MODEL_CONFIGS['hgb_shallow'])
+    index_tag = {'000300': 'csi300', '000905': 'csi500'}.get(index_code, index_code)
+    model_tag = model_name
+
+    logger.info("加载季度数据: %s", data_dir)
+    quarterly_data = load_quarterly_data(data_dir)
+    if not quarterly_data:
+        raise FileNotFoundError("未找到任何季度数据，目录: %s" % data_dir)
+
+    # 窗口 = 上一季度起往前 window_quarters 个季度；任一季度缺失则报错
+    last_y, last_q = _quarter_prev(year, quarter)
+    first_y, first_q = _quarter_minus(last_y, last_q, window_quarters - 1)
+    train_quarters = _quarters_from_to(first_y, first_q, last_y, last_q)
+    missing = [q for q in train_quarters if q not in quarterly_data]
+    if missing:
+        raise FileNotFoundError(
+            "数据不足：训练 %dQ%d 的窗口期从上一季度 %dQ%d 往前 %d 季，缺少季度: %s。"
+            "当前数据最新至 %s。请补齐数据或减小 --window-quarters。"
+            % (year, quarter, last_y, last_q, window_quarters,
+               ["%dQ%d" % (y, q) for y, q in missing],
+               "%dQ%d" % max(quarterly_data.keys()) if quarterly_data else "无")
+        )
+
+    first_records = list(quarterly_data.values())[0]
+    numeric_features, _ = get_available_features(first_records, include_categorical=True)
+    target_features = FEATURE_SETS.get(feature_set, FEATURE_SETS['full'])
+    feature_names = [f for f in target_features if f in numeric_features]
+    missing_f = set(target_features) - set(feature_names)
+    if missing_f:
+        logger.warning("特征组 %s 中缺失: %s", feature_set, missing_f)
+    logger.info("特征数: %d (feature_set=%s)", len(feature_names), feature_set)
+
+    train_data = []
+    for tq in train_quarters:
+        train_data.extend(quarterly_data[tq])
+
+    X_train = extract_features(train_data, feature_names)
+    y_train = get_relative_returns(train_data)
+    if len(X_train) < 100:
+        raise ValueError(
+            "数据不足：训练 %dQ%d 的样本数过少（%d 条，至少需 100 条）。请检查数据。"
+            % (year, quarter, len(X_train))
+        )
+
+    model = create_model(model_config)
+    model.fit(X_train, y_train)
+
+    os.makedirs(output_dir, exist_ok=True)
+    out_name = f"{index_tag}_{model_tag}_{year}q{quarter}.pkl"
+    out_path = os.path.join(output_dir, out_name)
+    kind = model_config.get('model', 'hgb')
+    model_type = 'hgb_regressor' if kind == 'hgb' else 'rf_regressor'
+    model_data = {
+        'model': model.model,
+        'scaler': model.scaler,
+        'is_fitted': True,
+        'feature_names': feature_names,
+        'label_type': 'relative',
+        'threshold_up': 3.0,
+        'threshold_down': -3.0,
+        'model_type': model_type,
+    }
+    with open(out_path, 'wb') as f:
+        pickle.dump(model_data, f)
+    logger.info("已保存: %s (训练样本 %d)", out_path, len(X_train))
+    return out_path
+
+
 def train_quarterly_models(
     data_dir: str,
     output_dir: str,
@@ -398,7 +534,9 @@ def main():
     parser.add_argument('--end-year', type=int, default=2025,
                         help='季度训练结束年（仅 --train-quarterly）')
     parser.add_argument('--window-quarters', type=int, default=8,
-                        help='每季训练使用前几季数据（仅 --train-quarterly，默认8）')
+                        help='每季训练使用前几季数据（默认8）；指定季度训练时若历史不足此数会报错')
+    parser.add_argument('--quarter', type=str, default='',
+                        help='按指定季度训练，如 2025Q4；需 --window-quarters 个历史季度，不足则抛异常')
     # 特征配置（与 strategy_optimizer 一致，full 来自 ml.features）
     parser.add_argument('--feature-set', choices=['base', 'momentum', 'full'], default='full',
                         help='特征组: base, momentum, full(默认)')
@@ -414,6 +552,26 @@ def main():
     parser.add_argument('--save-model', type=str, default='',
                         help='保存路径(如 models/predictor.pkl)；空则不保存；--train-quarterly 时忽略')
     args = parser.parse_args()
+
+    # 按指定季度训练：需 window_quarters 个历史季度，不足则抛异常
+    if args.quarter:
+        year, quarter = parse_quarter(args.quarter)
+        print("=" * 60)
+        print("指定季度模型训练: %dQ%d（需 %d 个历史季度，不足则报错）" % (year, quarter, args.window_quarters))
+        print("=" * 60)
+        out_path = train_single_quarter(
+            year=year,
+            quarter=quarter,
+            data_dir=args.quarterly_data,
+            output_dir=args.output_dir,
+            window_quarters=args.window_quarters,
+            feature_set=args.feature_set,
+            model_name=args.model,
+            index_code=args.index,
+        )
+        print("=" * 60)
+        print("已保存: %s" % out_path)
+        return
 
     # 季度训练模式：训练 2012～2025 每季模型并保存为 predictor_YYYYqN.pkl
     if args.train_quarterly:

@@ -700,7 +700,7 @@ if __name__ == '__main__':
     parser.add_argument('--start-year', type=int, default=2012, help='回测起始年份（多年评估）')
     parser.add_argument('--data-dir', type=str, default=None,
                         help='季度数据目录，默认按 --index 自动选择')
-    parser.add_argument('--index', default='000300', choices=['000300', '000905'],
+    parser.add_argument('--index', default='000905', choices=['000300', '000905'],
                         help='指数代码: 000300=沪深300(默认), 000905=中证500')
     parser.add_argument('--ensemble', action='store_true', help='运行集成实验')
     parser.add_argument('--report-dir', type=str, default=None,

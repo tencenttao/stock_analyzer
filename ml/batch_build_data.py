@@ -345,8 +345,8 @@ def main():
             print(f"  - {r['quarter']}: {r.get('status', 'unknown')} - {r.get('error', '')[:50]}")
     
     # 自动检查完整性
-    print("\n自动检查数据完整性...")
-    check_data_integrity()
+    #print("\n自动检查数据完整性...")
+    #check_data_integrity()
 
 
 if __name__ == '__main__':

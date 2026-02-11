@@ -205,23 +205,15 @@ STRATEGY_CONFIGS = {
     # ============================================
     # 机器学习策略
     # ============================================
-    # 与 config/settings.py 的 BACKTEST_CONFIG['benchmark']（或 backtest.py --benchmark）一致：
-    # - 沪深300 回测：model_schedule 用 csi300、index_code 用 000300
-    # - 中证500 回测：model_schedule 用 csi500、index_code 用 000905
+    # model_schedule / index_code 由回测的 benchmark 自动注入（见 StrategyRegistry.create(benchmark=...)）
     'ml': {
         'name': '机器学习选股',
         'description': '基于ML模型预测上涨概率，选择概率最高的股票',
         'params': {
-            # 单模型：固定使用该路径
-            #'model_path': 'models/predictor.pkl',
-            # 季度模型调度表（与候选池一致：沪深300用csi300，中证500用csi500）
-            # 命名格式: models/{index_tag}_{model_tag}_{year}q{quarter}.pkl
-            #'model_schedule': _build_model_schedule('csi500', 'rf_200', 2022, 2026),
-            'model_schedule': _build_model_schedule('csi300', 'rf_200', 2021, 2025),
-            'index_code': '000300',                # 与 benchmark 一致（000300=沪深300, 000905=中证500）
-            #'model_schedule': None,                # 不配置则全程使用 model_path
+            #'model_schedule': _build_model_schedule('csi500', 'hgb_deep', 2021, 2026),
+            'model_schedule': _build_model_schedule('csi300', 'rf_200', 2021, 2026),
             'min_prob_up': 0.0,                    # 最低上涨概率阈值（0=不过滤）
-            'min_pred_threshold': 0,            # 回归模型：最小预测相对收益(%)，低于此值不选入（如 2 表示只选预测跑赢基准2%+），None=不过滤
+            'min_pred_threshold': 0,               # 回归模型：最小预测相对收益(%)，低于此值不选入
             'min_price': 2.0,                      # 最低股价
             'top_n': 5,
         }
