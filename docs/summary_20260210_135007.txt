@@ -1,0 +1,21 @@
+策略优化实验报告
+============================================================
+生成时间: 2026-02-10T13:50:07.802876
+起始年份: 2012  数据目录: ./data/quarterly_data_v2
+
+最优配置
+----------------------------------------
+特征组合: full
+模型配置: rf_200
+训练窗口: 8季度
+选股数量: Top 5
+年化Alpha: +15.5%  Precision: 39.2%  月度胜率: 57%
+VolR: 1.66  AlphaVol: 8.0%  MaxDD: 47.1%
+
+稳定性优先推荐
+----------------------------------------
+特征+模型: value_only + hgb_shallow  窗口=8季度  Top10
+Alpha: +4.2%  Prec: 31.8%  Win: 52%
+VolR: 1.14  AlphaVol: 4.1%  MaxDD: 46.2%
+
+完整数据已保存: /Users/zhangtao/code/JYSstock_analyzer/logs/strategy_optimizer/report_20260210_135007.json
